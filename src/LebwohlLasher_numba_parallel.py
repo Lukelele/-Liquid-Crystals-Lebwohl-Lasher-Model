@@ -28,7 +28,7 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from numba import jit, njit
+from numba import jit, njit, prange
 
 #=======================================================================
 def initdat(nmax):
@@ -129,7 +129,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-@njit
+@njit()
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
@@ -164,7 +164,7 @@ def one_energy(arr,ix,iy,nmax):
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
 #=======================================================================
-@njit
+@njit(parallel=True)
 def all_energy(arr,nmax):
     """
     Arguments:
@@ -177,12 +177,12 @@ def all_energy(arr,nmax):
 	  enall (float) = reduced energy of lattice.
     """
     enall = 0.0
-    for i in range(nmax):
-        for j in range(nmax):
+    for i in prange(nmax):
+        for j in prange(nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
 #=======================================================================
-@njit
+@njit(parallel=True)
 def get_order(arr,nmax):
     """
     Arguments:
@@ -202,8 +202,8 @@ def get_order(arr,nmax):
     # put it in a (3,i,j) array.
     #
     lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    for a in range(3):
-        for b in range(3):
+    for a in prange(3):
+        for b in prange(3):
             for i in range(nmax):
                 for j in range(nmax):
                     Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
@@ -211,7 +211,7 @@ def get_order(arr,nmax):
     eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
 #=======================================================================
-@njit
+@njit(parallel=True)
 def rand_normal(scale, nmax):
     """
     Arguments:
@@ -225,12 +225,12 @@ def rand_normal(scale, nmax):
     aran (float(nmax,nmax)) = array of random numbers.
     """
     aran = np.zeros((nmax,nmax))
-    for i in range(nmax):
+    for i in prange(nmax):
         for j in range(nmax):
             aran[i,j] = np.sqrt(-2*np.log(np.random.uniform(0.0,1.0)))*np.cos(2*np.pi*np.random.uniform(0.0,1.0))
     return aran
 #=======================================================================
-@njit
+@njit(parallel=True)
 def MC_step(arr,Ts,nmax):
     """
     Arguments:
@@ -261,7 +261,7 @@ def MC_step(arr,Ts,nmax):
     # defined rand_normal function above
     aran = rand_normal(scale, nmax)
 
-    for i in range(nmax):
+    for i in prange(nmax):
         for j in range(nmax):
             ix = xran[i,j]
             iy = yran[i,j]
