@@ -137,9 +137,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef one_energy(double[:, ::1] arr, int ix, int iy, int nmax):
+cdef inline one_energy(double[:,::1] arr, int ix, int iy, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -180,9 +178,6 @@ cdef one_energy(double[:, ::1] arr, int ix, int iy, int nmax):
 
     return en
 #=======================================================================
-@cython.boundscheck(False)
-@cython.wraparound(False)
-@cython.cdivision(True)
 cdef double all_energy(double[:, ::1] arr, int nmax):
     """
     Arguments:
@@ -204,9 +199,7 @@ cdef double all_energy(double[:, ::1] arr, int nmax):
     return enall
 
 #=======================================================================
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef get_order(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] arr, int nmax):
+cdef get_order(double[:,::1] arr, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -248,9 +241,7 @@ cdef get_order(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] arr, int nmax):
     # eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
 #=======================================================================
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef MC_step(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] arr, float Ts, int nmax):
+cdef MC_step(double[:,::1] arr, float Ts, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -271,15 +262,15 @@ cdef MC_step(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] arr, float Ts, int nma
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
-    cdef double scale=0.1+Ts
+    cdef double scale = 0.1+Ts
     cdef double accept = 0
-    cdef cnp.ndarray[cnp.int32_t, ndim=2, mode='c'] xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    cdef cnp.ndarray[cnp.int32_t, ndim=2, mode='c'] yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    cdef int[:,::1] xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    cdef int[:,::1] yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    cdef double[:,::1] aran = np.random.normal(scale=scale, size=(nmax,nmax))
 
     cdef:
         int i,j,ix,iy = 0
-        double ang,en0,en1,boltz = 0
+        double ang,en0,en1,boltz = 0.0
 
     for i in range(nmax):
         for j in range(nmax):
@@ -294,12 +285,13 @@ cdef MC_step(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] arr, float Ts, int nma
             else:
             # Now apply the Monte Carlo test - compare
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = exp( -(en1 - en0) / Ts )                     # np.exp is SOOOOOOOOOOOOOO s.l.o.w
+                boltz = exp( -(en1 - en0) / Ts )                     # np.exp is slow, use libc.math.exp instead for single numbers
 
                 if boltz >= np.random.uniform(0.0,1.0):
                     accept += 1
                 else:
                     arr[ix,iy] -= ang
+
     return accept/(nmax*nmax)
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):

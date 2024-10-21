@@ -309,12 +309,36 @@ def main(program, nsteps, nmax, temp, pflag):
     ratio[0] = 0.5 # ideal value
     order[0] = get_order(lattice,nmax)
 
+
+    MC_initial = 0
+    MC_final = 0
+    all_initial = 0
+    all_final = 0
+    order_initial = 0
+    order_final = 0
+
+    MC_times = np.zeros(nsteps,dtype=np.float64)
+    all_times = np.zeros(nsteps,dtype=np.float64)
+    order_times = np.zeros(nsteps,dtype=np.float64)
+
     # Begin doing and timing some MC steps.
     initial = time.time()
     for it in range(1,nsteps+1):
+        MC_initial = time.time()
         ratio[it] = MC_step(lattice,temp,nmax)
+        MC_final = time.time()
+        MC_times[it-1] = MC_final-MC_initial
+
+        all_initial = time.time()
         energy[it] = all_energy(lattice,nmax)
+        all_final = time.time()
+        all_times[it-1] = all_final-all_initial
+
+        order_initial = time.time()
         order[it] = get_order(lattice,nmax)
+        order_final = time.time()
+        order_times[it-1] = order_final-order_initial
+
     final = time.time()
     runtime = final-initial
     
@@ -323,6 +347,9 @@ def main(program, nsteps, nmax, temp, pflag):
     # Plot final frame of lattice and generate output file
     # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
+    print("MC time: ", MC_times.sum())
+    print("All time: ", all_times.sum())
+    print("Order time: ", order_times.sum())
 #=======================================================================
 # Main part of program, getting command line arguments and calling
 # main simulation function.
