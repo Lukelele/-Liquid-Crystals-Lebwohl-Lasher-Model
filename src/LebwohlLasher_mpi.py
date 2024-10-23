@@ -28,7 +28,8 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from numba import jit, njit
+
+from mpi4py import MPI
 
 #=======================================================================
 def initdat(nmax):
@@ -129,7 +130,6 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-@njit
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
@@ -164,8 +164,7 @@ def one_energy(arr,ix,iy,nmax):
     en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
     return en
 #=======================================================================
-@njit
-def all_energy(arr,nmax):
+def all_energy(arr,nmax,rank,size):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -177,13 +176,12 @@ def all_energy(arr,nmax):
 	  enall (float) = reduced energy of lattice.
     """
     enall = 0.0
-    for i in range(nmax):
+    for i in range(rank%size,nmax,size):
         for j in range(nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
 #=======================================================================
-@njit
-def get_order(arr,nmax):
+def get_order(arr,nmax,rank,size):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -195,7 +193,7 @@ def get_order(arr,nmax):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    Qab = np.zeros((3,3))
+    process_Qab = np.zeros((3,3))
     delta = np.eye(3,3)
     #
     # Generate a 3D unit vector for each cell (i,j) and
@@ -204,34 +202,36 @@ def get_order(arr,nmax):
     lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
     for a in range(3):
         for b in range(3):
-            for i in range(nmax):
+            for i in range(rank%size,nmax,size):
                 for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
-    eigenvalues = np.linalg.eigvals(Qab)
-    return eigenvalues.max()
+                    process_Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
+    process_Qab = process_Qab/(2*nmax*nmax)
+    return process_Qab
 #=======================================================================
-@njit
-def rand_normal(scale, nmax):
-    """
-    Arguments:
-      scale (float) = scale factor for normal distribution;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to generate a 2D array of normally distributed
-      random numbers. This is to replace the numpy.random.normal which
-      is not supported by number njit.
-  Returns:
-    aran (float(nmax,nmax)) = array of random numbers.
-    """
-    aran = np.zeros((nmax,nmax))
-    for i in range(nmax):
+def update_rows(arr,Ts,nmax,row_indices,xran,yran,aran):
+    process_accept = 0
+    for i in row_indices:
         for j in range(nmax):
-            aran[i,j] = np.sqrt(-2*np.log(np.random.uniform(0.0,1.0)))*np.cos(2*np.pi*np.random.uniform(0.0,1.0))
-    return aran
-#=======================================================================
-@njit
-def MC_step(arr,Ts,nmax):
+            ix = xran[i,j]
+            iy = yran[i,j]
+            ang = aran[i,j]
+            en0 = one_energy(arr,ix,iy,nmax)
+            arr[ix,iy] += ang
+            en1 = one_energy(arr,ix,iy,nmax)
+            if en1<=en0:
+                process_accept += 1
+            else:
+            # Now apply the Monte Carlo test - compare
+            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                boltz = np.exp( -(en1 - en0) / Ts )
+
+                if boltz >= np.random.uniform(0.0,1.0):
+                    process_accept += 1
+                else:
+                    arr[ix,iy] -= ang
+    return process_accept
+
+def MC_step(arr,Ts,nmax,rank,size):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -249,38 +249,31 @@ def MC_step(arr,Ts,nmax):
     """
     #
     # Pre-compute some random numbers.  This is faster than
-    # using lots of individual calls.  "scale" sets the width
+    # using lots of individual calls. "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
     scale=0.1+Ts
     accept = 0
     xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+
+    odd_rows_indices = list(range(1,nmax,2))
+    even_rows_indices = list(range(0,nmax,2))
+
+    process_update_indices = list()
+    for i in range(rank%size, len(odd_rows_indices), size):
+        process_update_indices.append(odd_rows_indices[i])
+
+    process_accept = update_rows(arr,Ts,nmax,process_update_indices,xran,yran,aran)
+
+    process_update_indices = list()
+    for i in range(rank%size, len(even_rows_indices), size):
+        process_update_indices.append(even_rows_indices[i])
     
-    # aran = np.random.normal(scale=scale, size=(nmax,nmax))     # np.random.normal does not work with njit
-    # defined rand_normal function above
-    aran = rand_normal(scale, nmax)
+    process_accept += update_rows(arr,Ts,nmax,process_update_indices,xran,yran,aran)
 
-    for i in range(nmax):
-        for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
-                accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
-
-                if boltz >= np.random.uniform(0.0,1.0):
-                    accept += 1
-                else:
-                    arr[ix,iy] -= ang
-    return accept/(nmax*nmax)
+    return process_accept/(nmax*nmax)
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -295,33 +288,62 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+
     # Create and initialise lattice
-    lattice = initdat(nmax)
-    # Plot initial frame of lattice
-    plotdat(lattice,pflag,nmax)
-    # Create arrays to store energy, acceptance ratio and order parameter
-    energy = np.zeros(nsteps+1,dtype=np.dtype)
-    ratio = np.zeros(nsteps+1,dtype=np.dtype)
-    order = np.zeros(nsteps+1,dtype=np.dtype)
-    # Set initial values in arrays
-    energy[0] = all_energy(lattice,nmax)
-    ratio[0] = 0.5 # ideal value
-    order[0] = get_order(lattice,nmax)
+    if rank == 0:
+        print(f"MPI has started with {size} tasks.")
+        lattice = initdat(nmax)
+    else:
+        lattice = None
+
+    lattice = comm.bcast(lattice, root=0)
+    
+    if rank == 0:
+        # Plot initial frame of lattice
+        plotdat(lattice,pflag,nmax)
+        # Create arrays to store energy, acceptance ratio and order parameter
+        energy = np.zeros(nsteps+1,dtype=np.dtype)
+        ratio = np.zeros(nsteps+1,dtype=np.dtype)
+        order = np.zeros(nsteps+1,dtype=np.dtype)
+        # Set initial values in arrays
+        energy[0] = all_energy(lattice,nmax,rank,size)
+        ratio[0] = 0.5 # ideal value
+        order[0] = get_order(lattice,nmax,rank,size)
+
 
     # Begin doing and timing some MC steps.
     initial = time.time()
+    
     for it in range(1,nsteps+1):
-        ratio[it] = MC_step(lattice,temp,nmax)
-        energy[it] = all_energy(lattice,nmax)
-        order[it] = get_order(lattice,nmax)
+        process_ratio = MC_step(lattice,temp,nmax,rank,size)
+        comm.reduce(process_ratio, op=MPI.SUM, root=0)
+        if rank == 0:
+            ratio[it] = process_ratio
+
+        process_energy = all_energy(lattice,nmax,rank,size)
+        comm.reduce(process_energy, op=MPI.SUM, root=0)
+        if rank == 0:
+            energy[it] = process_energy
+
+        process_Qab = get_order(lattice,nmax,rank,size)
+        comm.reduce(process_Qab, op=MPI.SUM, root=0)
+        if rank == 0:
+            eigenvalues,eigenvectors = np.linalg.eig(process_Qab)
+            order[it] = np.max(eigenvalues)
+
     final = time.time()
     runtime = final-initial
     
     # Final outputs
-    print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
-    # Plot final frame of lattice and generate output file
-    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-    plotdat(lattice,pflag,nmax)
+    if rank == 0:
+        print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
+        # Plot final frame of lattice and generate output file
+        # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+        plotdat(lattice,pflag,nmax)
 #=======================================================================
 # Main part of program, getting command line arguments and calling
 # main simulation function.

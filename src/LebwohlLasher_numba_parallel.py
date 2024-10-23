@@ -178,7 +178,7 @@ def all_energy(arr,nmax):
     """
     enall = 0.0
     for i in prange(nmax):
-        for j in prange(nmax):
+        for j in range(nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
 #=======================================================================
@@ -202,13 +202,14 @@ def get_order(arr,nmax):
     # put it in a (3,i,j) array.
     #
     lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    for a in prange(3):
-        for b in prange(3):
-            for i in range(nmax):
+    for a in range(3):
+        for b in range(3):
+            for i in prange(nmax):
                 for j in range(nmax):
                     Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
     Qab = Qab/(2*nmax*nmax)
-    eigenvalues,eigenvectors = np.linalg.eig(Qab)
+    eigenvalues = np.linalg.eigvals(Qab)
+
     return eigenvalues.max()
 #=======================================================================
 @njit(parallel=True)
@@ -266,7 +267,6 @@ def MC_step(arr,Ts,nmax):
             ix = xran[i,j]
             iy = yran[i,j]
             ang = aran[i,j]
-            ang = 0
             en0 = one_energy(arr,ix,iy,nmax)
             arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
