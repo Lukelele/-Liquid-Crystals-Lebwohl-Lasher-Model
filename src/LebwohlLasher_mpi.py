@@ -216,7 +216,7 @@ def update_rows(arr,Ts,nmax,row_indices,xran,yran,aran):
             iy = yran[i,j]
             ang = aran[i,j]
             en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
+            # arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
             if en1<=en0:
                 process_accept += 1
@@ -228,7 +228,8 @@ def update_rows(arr,Ts,nmax,row_indices,xran,yran,aran):
                 if boltz >= np.random.uniform(0.0,1.0):
                     process_accept += 1
                 else:
-                    arr[ix,iy] -= ang
+                    # arr[ix,iy] -= ang
+                    pass
     return process_accept
 
 def MC_step(arr,Ts,nmax,rank,size):
@@ -332,7 +333,7 @@ def main(program, nsteps, nmax, temp, pflag):
         process_Qab = get_order(lattice,nmax,rank,size)
         comm.reduce(process_Qab, op=MPI.SUM, root=0)
         if rank == 0:
-            eigenvalues,eigenvectors = np.linalg.eig(process_Qab)
+            eigenvalues = np.linalg.eigvals(process_Qab)
             order[it] = np.max(eigenvalues)
 
     final = time.time()
