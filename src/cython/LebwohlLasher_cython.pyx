@@ -137,6 +137,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
+@cython.boundscheck(False)
 cdef inline one_energy(double[:,::1] arr, int ix, int iy, int nmax):
     """
     Arguments:
@@ -178,6 +179,7 @@ cdef inline one_energy(double[:,::1] arr, int ix, int iy, int nmax):
 
     return en
 #=======================================================================
+@cython.boundscheck(False)
 cdef double all_energy(double[:, ::1] arr, int nmax):
     """
     Arguments:
@@ -199,6 +201,7 @@ cdef double all_energy(double[:, ::1] arr, int nmax):
     return enall
 
 #=======================================================================
+@cython.boundscheck(False)
 cdef get_order(double[:,::1] arr, int nmax):
     """
     Arguments:
@@ -241,6 +244,7 @@ cdef get_order(double[:,::1] arr, int nmax):
     # eigenvalues,eigenvectors = np.linalg.eig(Qab)
     return eigenvalues.max()
 #=======================================================================
+@cython.boundscheck(False)
 cdef MC_step(double[:,::1] arr, float Ts, int nmax):
     """
     Arguments:
@@ -264,8 +268,8 @@ cdef MC_step(double[:,::1] arr, float Ts, int nmax):
     # with temperature.
     cdef double scale = 0.1+Ts
     cdef double accept = 0
-    cdef int[:,::1] xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    cdef int[:,::1] yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    cdef long[:,::1] xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    cdef long[:,::1] yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     cdef double[:,::1] aran = np.random.normal(scale=scale, size=(nmax,nmax))
 
     cdef:

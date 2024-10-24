@@ -216,7 +216,7 @@ def update_rows(arr,Ts,nmax,row_indices,xran,yran,aran):
             iy = yran[i,j]
             ang = aran[i,j]
             en0 = one_energy(arr,ix,iy,nmax)
-            # arr[ix,iy] += ang
+            arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
             if en1<=en0:
                 process_accept += 1
@@ -228,7 +228,7 @@ def update_rows(arr,Ts,nmax,row_indices,xran,yran,aran):
                 if boltz >= np.random.uniform(0.0,1.0):
                     process_accept += 1
                 else:
-                    # arr[ix,iy] -= ang
+                    arr[ix,iy] -= ang
                     pass
     return process_accept
 
@@ -305,7 +305,7 @@ def main(program, nsteps, nmax, temp, pflag):
     
     if rank == 0:
         # Plot initial frame of lattice
-        plotdat(lattice,pflag,nmax)
+        # plotdat(lattice,pflag,nmax)
         # Create arrays to store energy, acceptance ratio and order parameter
         energy = np.zeros(nsteps+1,dtype=np.dtype)
         ratio = np.zeros(nsteps+1,dtype=np.dtype)
@@ -324,6 +324,10 @@ def main(program, nsteps, nmax, temp, pflag):
         comm.reduce(process_ratio, op=MPI.SUM, root=0)
         if rank == 0:
             ratio[it] = process_ratio
+            
+        new_lattice = np.empty((nmax,nmax),dtype=np.float64)
+        comm.Allreduce(lattice, new_lattice, op=MPI.MAX)
+        lattice = new_lattice
 
         process_energy = all_energy(lattice,nmax,rank,size)
         comm.reduce(process_energy, op=MPI.SUM, root=0)
