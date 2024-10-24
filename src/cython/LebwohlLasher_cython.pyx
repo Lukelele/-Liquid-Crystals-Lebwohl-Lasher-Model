@@ -37,6 +37,8 @@ cimport cython
 from libc.math cimport sin, cos, exp
 import math
 
+import random
+
 
 #=======================================================================
 def initdat(int nmax):
@@ -291,7 +293,7 @@ cdef MC_step(double[:,::1] arr, float Ts, int nmax):
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
                 boltz = exp( -(en1 - en0) / Ts )                     # np.exp is slow, use libc.math.exp instead for single numbers
 
-                if boltz >= np.random.uniform(0.0,1.0):
+                if boltz >= random.random():                         # np.random.uniform(0.0,1.0) is SOOOOO incredibly slow its actually pretty impressive
                     accept += 1
                 else:
                     arr[ix,iy] -= ang

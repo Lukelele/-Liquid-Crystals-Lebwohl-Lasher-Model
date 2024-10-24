@@ -7,5 +7,5 @@ import numpy
 
 setup(
     ext_modules=cythonize("LebwohlLasher_cython.pyx"),
-    include_dirs=[numpy.get_include()]
+    include_dirs=[numpy.get_include()],
 )    

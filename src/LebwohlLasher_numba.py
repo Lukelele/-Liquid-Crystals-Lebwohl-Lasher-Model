@@ -29,6 +29,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from numba import jit, njit
+from math import cos, sin, pi, exp, sqrt
 
 #=======================================================================
 def initdat(nmax):
@@ -155,13 +156,17 @@ def one_energy(arr,ix,iy,nmax):
 # to the energy
 #
     ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     return en
 #=======================================================================
 @njit
@@ -269,6 +274,7 @@ def MC_step(arr,Ts,nmax):
             en0 = one_energy(arr,ix,iy,nmax)
             arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
+            en1=1
             if en1<=en0:
                 accept += 1
             else:
