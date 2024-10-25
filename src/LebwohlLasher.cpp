@@ -2,10 +2,93 @@
 #include <cmath>
 #include <string>
 #include <vector>
-#include <Eigen/Dense>
-
+#include <random>
+#include <algorithm>
 
 using namespace std;
+
+
+
+class EigenSolver {
+private:
+    static constexpr double EPSILON = 1e-10;
+    static constexpr int MAX_ITERATIONS = 100;
+    
+    int n;
+    std::vector<std::vector<double>> matrix;
+    std::vector<std::vector<double>> eigenvectors;
+    std::vector<double> eigenvalues;
+
+    void initializeEigenvectors() {
+        eigenvectors = std::vector<std::vector<double>>(n, std::vector<double>(n, 0.0));
+        for(int i = 0; i < n; i++) {
+            eigenvectors[i][i] = 1.0;
+        }
+    }
+
+    void rotate(int p, int q) {
+        double diff = matrix[q][q] - matrix[p][p];
+        double theta = 0.5 * atan2(2 * matrix[p][q], diff);
+        double c = cos(theta);
+        double s = sin(theta);
+
+        for(int i = 0; i < n; i++) {
+            double temp1 = eigenvectors[i][p];
+            double temp2 = eigenvectors[i][q];
+            eigenvectors[i][p] = c * temp1 - s * temp2;
+            eigenvectors[i][q] = s * temp1 + c * temp2;
+        }
+
+        for(int i = 0; i < n; i++) {
+            if(i != p && i != q) {
+                double temp1 = matrix[p][i];
+                double temp2 = matrix[q][i];
+                matrix[i][p] = matrix[p][i] = c * temp1 - s * temp2;
+                matrix[i][q] = matrix[q][i] = s * temp1 + c * temp2;
+            }
+        }
+
+        double temp = matrix[p][p];
+        matrix[p][p] = c * c * temp + s * s * matrix[q][q] - 2 * c * s * matrix[p][q];
+        matrix[q][q] = s * s * temp + c * c * matrix[q][q] + 2 * c * s * matrix[p][q];
+        matrix[p][q] = matrix[q][p] = 0.0;
+    }
+
+public:
+    EigenSolver(const std::vector<std::vector<double>>& input_matrix) {
+        n = input_matrix.size();
+        matrix = input_matrix;
+        eigenvalues.resize(n);
+        initializeEigenvectors();
+    }
+
+    void compute() {
+        for(int iter = 0; iter < MAX_ITERATIONS; iter++) {
+            double max_element = 0.0;
+            int p = 0, q = 0;
+
+            for(int i = 0; i < n-1; i++) {
+                for(int j = i+1; j < n; j++) {
+                    if(std::abs(matrix[i][j]) > max_element) {
+                        max_element = std::abs(matrix[i][j]);
+                        p = i;
+                        q = j;
+                    }
+                }
+            }
+
+            if(max_element < EPSILON) break;
+            rotate(p, q);
+        }
+
+        for(int i = 0; i < n; i++) {
+            eigenvalues[i] = matrix[i][i];
+        }
+    }
+
+    std::vector<double> getEigenvalues() const { return eigenvalues; }
+    std::vector<std::vector<double>> getEigenvectors() const { return eigenvectors; }
+};
 
 
 
@@ -22,15 +105,17 @@ vector<vector<double> > initdat(int nmax){
 }
 
 
-float one_energy(vector<vector<double> > arr,int ix,int iy,int nmax){
+double one_energy(vector<vector<double> > &arr, int ix, int iy, int nmax) {
+    double en = 0.0;
+    double ang = 0.0;
+    
+    // Correct way to handle periodic boundaries
+    int ixp = (ix + 1) % nmax;
+    int ixm = (ix - 1 + nmax) % nmax;  // Add nmax before modulo
+    int iyp = (iy + 1) % nmax;
+    int iym = (iy - 1 + nmax) % nmax;  // Add nmax before modulo
 
-    float en = 0.0;
-    float ang = 0.0;
-    float ixp = (ix+1)%nmax;
-    float ixm = (ix-1)%nmax;
-    float iyp = (iy+1)%nmax;
-    float iym = (iy-1)%nmax;
-
+    // Rest of the function remains the same
     ang = arr[ix][iy]-arr[ixp][iy];
     en += 0.5 * (1.0 - 3.0 * std::cos(ang) * std::cos(ang));
     ang = arr[ix][iy]-arr[ixm][iy];
@@ -44,7 +129,8 @@ float one_energy(vector<vector<double> > arr,int ix,int iy,int nmax){
 }
 
 
-float all_energy(vector<vector<double> > arr, int nmax) {
+
+double all_energy(vector<vector<double> > &arr, int nmax) {
 
     double enall = 0.0;
 
@@ -53,42 +139,39 @@ float all_energy(vector<vector<double> > arr, int nmax) {
             enall += one_energy(arr,i,j,nmax);
         }
     }
-    
+
     return enall;
 }
 
 
-double MC_step(vector<vector<double> > arr, double Ts, int nmax) {
+double MC_step(vector<vector<double> > &arr, double Ts, int nmax) {
 
-    double scale=0.1+Ts;
-    double accept = 0;
+    double scale = 0.1 + Ts;
+    int accept = 0;
 
-    // Random number generators
+    // Create 2D arrays using vectors
+    std::vector<std::vector<int>> xran(nmax, std::vector<int>(nmax));
+    std::vector<std::vector<int>> yran(nmax, std::vector<int>(nmax));
+    std::vector<std::vector<double>> aran(nmax, std::vector<double>(nmax));
+
+    // Random number generation setup
     std::random_device rd;
     std::mt19937 gen(rd());
-
-    // Integer random numbers in the range [0, nmax)
-    std::uniform_int_distribution<> dis_int(0, nmax - 1);
-
-    // Normal distribution with mean 0 and standard deviation 'scale'
-    std::normal_distribution<> dis_normal(0.0, scale);
-
-    vector<vector<int> > xran(nmax, vector<int>(nmax));
-    vector<vector<int> > yran(nmax, vector<int>(nmax));
-    vector<vector<double> > aran(nmax, vector<double>(nmax));
+    std::uniform_int_distribution<> uniform_dist(0, nmax - 1);
+    std::normal_distribution<> normal_dist(0.0, scale);
 
     for (int i = 0; i < nmax; ++i) {
         for (int j = 0; j < nmax; ++j) {
-            xran[i][j] = dis_int(gen);
-            yran[i][j] = dis_int(gen);
-            aran[i][j] = dis_normal(gen);
+            xran[i][j] = uniform_dist(gen);
+            yran[i][j] = uniform_dist(gen);
+            aran[i][j] = normal_dist(gen);
         }
     }
 
     for (int i = 0; i < nmax; i++) {
         for (int j = 0; j < nmax; j++) {
-            double ix = xran[i][j];
-            double iy = yran[i][j];
+            int ix = xran[i][j];
+            int iy = yran[i][j];
             double ang = aran[i][j];
             double en0 = one_energy(arr,ix,iy,nmax);
             arr[ix][iy] += ang;
@@ -114,91 +197,98 @@ double MC_step(vector<vector<double> > arr, double Ts, int nmax) {
 
 
 
-// float get_order(vector<vector<double> > arr, int nmax) {
+double get_order(vector<vector<double> > &arr, int nmax) {
 
-//     std::vector<std::vector<double>> Qab(3, std::vector<double>(3, 0.0));
+    std::vector<std::vector<double>> Qab(3, std::vector<double>(3, 0.0));
 
-//     std::vector<std::vector<double>> delta(3, std::vector<double>(3, 0.0));
-//     for (int i = 0; i < 3; ++i) {
-//         delta[i][i] = 1.0;
-//     }
+    std::vector<std::vector<double>> delta(3, std::vector<double>(3, 0.0));
+    for (int i = 0; i < 3; ++i) {
+        delta[i][i] = 1.0;
+    }
 
-//     // Create vectors to hold cos, sin, and zeros
-//     std::vector<double> cosArr(arr.size());
-//     std::vector<double> sinArr(arr.size());
-//     std::vector<double> zerosArr(arr.size(), 0.0);
+    // Corrected initialization sizes
+    std::vector<double> cosArr(nmax * nmax);
+    std::vector<double> sinArr(nmax * nmax);
+    std::vector<double> zerosArr(nmax * nmax, 0.0);
 
-//     // Fill cosArr and sinArr with cosine and sine values of arr
-//     for (size_t i = 0; i < arr.size(); ++i) {
-//         for (size_t j = 0; j < arr[i].size(); ++j) {
-//             cosArr[i * arr.size() + j] = cos(arr[i][j]);
-//             sinArr[i * arr.size() + j] = sin(arr[i][j]);
-//         }
-//     }
+    // Fill cosArr and sinArr with cosine and sine values of arr
+    for (int i = 0; i < nmax; ++i) {
+        for (int j = 0; j < nmax; ++j) {
+            cosArr[i * nmax + j] = cos(arr[i][j]);
+            sinArr[i * nmax + j] = sin(arr[i][j]);
+        }
+    }
 
-//     // Create a 3D vector to hold the final result
-//     std::vector<std::vector<std::vector<double>>> lab(3, std::vector<std::vector<double>>(nmax, std::vector<double>(nmax)));
+    // Create a 3D vector to hold the final result
+    std::vector<std::vector<std::vector<double>>> lab(3, std::vector<std::vector<double>>(nmax, std::vector<double>(nmax)));
 
-//     // Reshape and fill the 3D vector
-//     for (int i = 0; i < nmax; ++i) {
-//         for (int j = 0; j < nmax; ++j) {
-//             lab[0][i][j] = cosArr[i * nmax + j];
-//             lab[1][i][j] = sinArr[i * nmax + j];
-//             lab[2][i][j] = zerosArr[i * nmax + j];
-//         }
-//     }
+    // Reshape and fill the 3D vector
+    for (int i = 0; i < nmax; ++i) {
+        for (int j = 0; j < nmax; ++j) {
+            lab[0][i][j] = cosArr[i * nmax + j];
+            lab[1][i][j] = sinArr[i * nmax + j];
+            lab[2][i][j] = zerosArr[i * nmax + j];
+        }
+    }
 
-//     for (int a = 0; a < 3; ++a) {
-//         for (int b = 0; b < 3; ++b) {
-//             for (int i = 0; i < nmax; ++i) {
-//                 for (int j = 0; j < nmax; ++j) {
-//                     // Qab[a,b] += 3 * lab[a,i,j] * lab[b,i,j] - delta[a,b];
-//                 }
-//             }
-//         }
-//     }
+    // Calculate Qab matrix
+    for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+            for (int i = 0; i < nmax; ++i) {
+                for (int j = 0; j < nmax; ++j) {
+                    Qab[a][b] += 3 * lab[a][i][j] * lab[b][i][j] - delta[a][b];
+                }
+            }
+        }
+    }
 
-//     Qab = Qab/(2*nmax*nmax);
+    for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+            Qab[a][b] = Qab[a][b] / (nmax * nmax);
+        }
+    }
 
-//     Eigen::EigenSolver<Eigen::MatrixXd> solver(Qab);
+    EigenSolver eigenSolver(Qab);
+    eigenSolver.compute();
+    std::vector<double> eigenvalues = eigenSolver.getEigenvalues();
     
-//     // Get the eigenvalues
-//     Eigen::VectorXd eigenvalues = solver.eigenvalues().real();
+    int maxEigenvalue = *max_element(eigenvalues.begin(), eigenvalues.end());
 
-//     // Find and return the maximum eigenvalue
-//     return eigenvalues.maxCoeff();
-// }
+    return maxEigenvalue;
+}
+
 
 
 int main() {
-    int nsteps = 10;
-    int nmax = 10;
-    float temp = 1.0;
+    int nsteps = 50;
+    int nmax = 400;
+    float temp = 0.5;
     int pflag = 0;
 
     vector<vector<double> > lattice = initdat(nmax);
 
-    vector<double> energy = vector<double>(nsteps+1, 0);
-    vector<double> ratio = vector<double>(nsteps+1, 0);
-    vector<double> order = vector<double>(nsteps+1, 0);
+    vector<double> energy;
+    vector<double> ratio;
+    vector<double> order;
 
-    energy[0] = all_energy(lattice,nmax);
-    ratio[0] = 0.5;
-    // order[0] = get_order(lattice,nmax);
+
+    energy.push_back(all_energy(lattice,nmax));
+    ratio.push_back(0.5);
+    order.push_back(get_order(lattice,nmax));
+
 
     clock_t initial = clock();
     for (int it = 1; it < nsteps+1; it++) {
-        ratio[it] = MC_step(lattice,temp,nmax);
-        energy[it] = all_energy(lattice,nmax);
-        // order[it] = get_order(lattice,nmax);
+        ratio.push_back(MC_step(lattice,temp,nmax));
+        energy.push_back(all_energy(lattice,nmax));
+        order.push_back(get_order(lattice,nmax));
     }
     clock_t final = clock();
 
     double runtime = (double)(final - initial) / CLOCKS_PER_SEC;
-    cout << runtime << endl;
-    
 
-    // print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime));
+    cout << "Size: " << nmax << ", Steps: " << nsteps << ", T*: " << temp << ", Order: " << order[nsteps-1] << ", Time: " << runtime << " s" << endl;
+    cin.get();
 
     return 0;
 }
