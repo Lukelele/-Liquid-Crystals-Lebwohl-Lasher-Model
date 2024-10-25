@@ -108,22 +108,26 @@ vector<vector<double> > initdat(int nmax){
 double one_energy(vector<vector<double> > &arr, int ix, int iy, int nmax) {
     double en = 0.0;
     double ang = 0.0;
+    double cos_ang = 0.0;
     
-    // Correct way to handle periodic boundaries
+ 
     int ixp = (ix + 1) % nmax;
-    int ixm = (ix - 1 + nmax) % nmax;  // Add nmax before modulo
+    int ixm = (ix - 1 + nmax) % nmax;
     int iyp = (iy + 1) % nmax;
-    int iym = (iy - 1 + nmax) % nmax;  // Add nmax before modulo
+    int iym = (iy - 1 + nmax) % nmax;
 
-    // Rest of the function remains the same
     ang = arr[ix][iy]-arr[ixp][iy];
-    en += 0.5 * (1.0 - 3.0 * std::cos(ang) * std::cos(ang));
+    cos_ang = std::cos(ang);
+    en += 0.5 * (1.0 - 3.0 * cos_ang * cos_ang);
     ang = arr[ix][iy]-arr[ixm][iy];
-    en += 0.5 * (1.0 - 3.0 * std::cos(ang) * std::cos(ang));
+    cos_ang = std::cos(ang);
+    en += 0.5 * (1.0 - 3.0 * cos_ang * cos_ang);
     ang = arr[ix][iy]-arr[ix][iyp];
-    en += 0.5 * (1.0 - 3.0 * std::cos(ang) * std::cos(ang));
+    cos_ang = std::cos(ang);
+    en += 0.5 * (1.0 - 3.0 * cos_ang * cos_ang);
     ang = arr[ix][iy]-arr[ix][iym];
-    en += 0.5 * (1.0 - 3.0 * std::cos(ang) * std::cos(ang));
+    cos_ang = std::cos(ang);
+    en += 0.5 * (1.0 - 3.0 * cos_ang * cos_ang);
 
     return en;
 }
@@ -149,12 +153,10 @@ double MC_step(vector<vector<double> > &arr, double Ts, int nmax) {
     double scale = 0.1 + Ts;
     int accept = 0;
 
-    // Create 2D arrays using vectors
     std::vector<std::vector<int>> xran(nmax, std::vector<int>(nmax));
     std::vector<std::vector<int>> yran(nmax, std::vector<int>(nmax));
     std::vector<std::vector<double>> aran(nmax, std::vector<double>(nmax));
 
-    // Random number generation setup
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> uniform_dist(0, nmax - 1);
@@ -206,12 +208,10 @@ double get_order(vector<vector<double> > &arr, int nmax) {
         delta[i][i] = 1.0;
     }
 
-    // Corrected initialization sizes
     std::vector<double> cosArr(nmax * nmax);
     std::vector<double> sinArr(nmax * nmax);
     std::vector<double> zerosArr(nmax * nmax, 0.0);
 
-    // Fill cosArr and sinArr with cosine and sine values of arr
     for (int i = 0; i < nmax; ++i) {
         for (int j = 0; j < nmax; ++j) {
             cosArr[i * nmax + j] = cos(arr[i][j]);
@@ -219,10 +219,8 @@ double get_order(vector<vector<double> > &arr, int nmax) {
         }
     }
 
-    // Create a 3D vector to hold the final result
     std::vector<std::vector<std::vector<double>>> lab(3, std::vector<std::vector<double>>(nmax, std::vector<double>(nmax)));
 
-    // Reshape and fill the 3D vector
     for (int i = 0; i < nmax; ++i) {
         for (int j = 0; j < nmax; ++j) {
             lab[0][i][j] = cosArr[i * nmax + j];
@@ -231,7 +229,6 @@ double get_order(vector<vector<double> > &arr, int nmax) {
         }
     }
 
-    // Calculate Qab matrix
     for (int a = 0; a < 3; ++a) {
         for (int b = 0; b < 3; ++b) {
             for (int i = 0; i < nmax; ++i) {
@@ -260,6 +257,8 @@ double get_order(vector<vector<double> > &arr, int nmax) {
 
 
 int main() {
+    cout << "Lebwohl-Lasher Model" << endl;
+
     int nsteps = 50;
     int nmax = 400;
     float temp = 0.5;
