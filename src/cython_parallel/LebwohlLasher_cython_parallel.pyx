@@ -25,14 +25,25 @@ SH 16-Oct-23
 import sys
 import time
 import datetime
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-from mpi4py import MPI
+cimport numpy as cnp
+cimport cython
+
+from libc.math cimport sin, cos, exp, log, sqrt, M_PI
+from libc.stdlib cimport rand, RAND_MAX
+from libcpp.random cimport mt19937, uniform_real_distribution
+
+import random
+
+from cython.parallel import prange
+cimport openmp
 
 #=======================================================================
-def initdat(nmax):
+def initdat(int nmax):
     """
     Arguments:
       nmax (int) = size of lattice to create (nmax,nmax).
@@ -43,7 +54,7 @@ def initdat(nmax):
 	Returns:
 	  arr (float(nmax,nmax)) = array to hold lattice.
     """
-    arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
+    cdef double[:,::1] arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
     return arr
 #=======================================================================
 def plotdat(arr,pflag,nmax):
@@ -65,6 +76,8 @@ def plotdat(arr,pflag,nmax):
 	Returns:
       NULL
     """
+    arr = np.array(arr)
+
     if pflag==0:
         return
     u = np.cos(arr)
@@ -130,7 +143,9 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-def one_energy(arr,ix,iy,nmax):
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax) nogil:
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -145,43 +160,58 @@ def one_energy(arr,ix,iy,nmax):
 	Returns:
 	  en (float) = reduced energy of cell.
     """
-    en = 0.0
-    ixp = (ix+1)%nmax # These are the coordinates
-    ixm = (ix-1)%nmax # of the neighbours
-    iyp = (iy+1)%nmax # with wraparound
-    iym = (iy-1)%nmax #
+    cdef:
+        double en, ang, cos_ang = 0.0
+        double cell_value = arr[ix,iy]
+        int ixp = (ix+1)%nmax # These are the coordinates
+        int ixm = (ix-1)%nmax # of the neighbours
+        int iyp = (iy+1)%nmax # with wraparound
+        int iym = (iy-1)%nmax #
 #
 # Add together the 4 neighbour contributions
 # to the energy
 #
-    ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
-    ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    ang = cell_value-arr[ixp,iy]
+    cos_ang = cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    ang = cell_value-arr[ixm,iy]
+    cos_ang = cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    ang = cell_value-arr[ix,iyp]
+    cos_ang = cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    ang = cell_value-arr[ix,iym]
+    cos_ang = cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
+
     return en
 #=======================================================================
-def all_energy(arr,nmax,rank,size):
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double all_energy(double[:, ::1] arr, int nmax):
     """
     Arguments:
-	  arr (float(nmax,nmax)) = array that contains lattice data;
+      arr (float(nmax,nmax)) = array that contains lattice data;
       nmax (int) = side length of square lattice.
     Description:
       Function to compute the energy of the entire lattice. Output
       is in reduced units (U/epsilon).
-	Returns:
-	  enall (float) = reduced energy of lattice.
+    Returns:
+      enall (float) = reduced energy of lattice.
     """
-    enall = 0.0
-    for i in range(rank%size,nmax,size):
+    cdef double enall = 0.0
+    cdef int i, j
+
+    for i in prange(nmax, nogil=True):
         for j in range(nmax):
-            enall += one_energy(arr,i,j,nmax)
+            enall += one_energy(arr, i, j, nmax)
+
     return enall
+
 #=======================================================================
-def get_order(arr,nmax,rank,size):
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double get_order(double[:,::1] arr, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -193,46 +223,33 @@ def get_order(arr,nmax,rank,size):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    process_Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
+    cdef double[:,::1] Qab = np.zeros((3, 3), dtype=np.float64)
+    cdef double[:,::1] delta = np.eye(3, dtype=np.float64)
+
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
     #
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    for a in range(3):
+    cdef double[:,:,::1] lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
+
+    cdef:
+        int a,b,i,j = 0
+
+    for a in range(3):                                            # not parallelising is faster here
         for b in range(3):
-            for i in range(rank%size,nmax,size):
+            for i in range(nmax):
                 for j in range(nmax):
-                    process_Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    process_Qab = process_Qab/(2*nmax*nmax)
-    return process_Qab
+                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
+            Qab[a,b] = Qab[a,b]/(2*nmax*nmax)
+
+    cdef double[::1] eigenvalues = np.zeros(3, dtype=np.float64)
+
+    eigenvalues = np.linalg.eigvalsh(Qab)                           # np.linalg.eigvalsh is faster than np.linalg.eigvals, and is also c array contiguous
+    return max(eigenvalues)
 #=======================================================================
-def update_rows(arr,Ts,nmax,row_indices,xran,yran,aran):
-    process_accept = 0
-    for i in row_indices:
-        for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
-                process_accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
-
-                if boltz >= np.random.uniform(0.0,1.0):
-                    process_accept += 1
-                else:
-                    arr[ix,iy] -= ang
-                    pass
-    return process_accept
-
-def MC_step(arr,Ts,nmax,rank,size):
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double MC_step(double[:,::1] arr, double Ts, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -250,34 +267,68 @@ def MC_step(arr,Ts,nmax,rank,size):
     """
     #
     # Pre-compute some random numbers.  This is faster than
-    # using lots of individual calls. "scale" sets the width
+    # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
-    scale=0.1+Ts
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
+    cdef double scale = 0.1+Ts
+    cdef double accept = 0
+    cdef long[:,::1] xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    cdef long[:,::1] yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
+    cdef double[:,::1] aran = np.random.normal(scale=scale, size=(nmax,nmax))
 
-    # calculate the even and odd rows indices
-    odd_rows_indices = list(range(1,nmax,2))
-    even_rows_indices = list(range(0,nmax,2))
+    cdef uniform_real_distribution[double] dist = uniform_real_distribution[double](0.0, 1.0)
+    cdef mt19937 generator = mt19937()
 
-    # calculate the indices that each process will update
-    process_update_indices = list()
-    for i in range(rank%size, len(odd_rows_indices), size):
-        process_update_indices.append(odd_rows_indices[i])
+    cdef:
+        int i,j,ix,iy = 0
+        double ang,en0,en1,boltz = 0.0
+        int[::1] odd_row_indices = np.arange(1, nmax, 2)
+        int[::1] even_row_indices = np.arange(0, nmax, 2)
 
-    # update the odd rows
-    process_accept = update_rows(arr,Ts,nmax,process_update_indices,xran,yran,aran)
 
-    # same process with even rows
-    process_update_indices = list()
-    for i in range(rank%size, len(even_rows_indices), size):
-        process_update_indices.append(even_rows_indices[i])
-    
-    process_accept += update_rows(arr,Ts,nmax,process_update_indices,xran,yran,aran)
+    # update odd rows
+    for i in prange(nmax//2, nogil=True):
+        for j in range(nmax):
+            ix = xran[i*2+1,j]
+            iy = yran[i*2+1,j]
+            ang = aran[i*2+1,j]
+            en0 = one_energy(arr,ix,iy,nmax)
+            arr[ix,iy] += ang
+            en1 = one_energy(arr,ix,iy,nmax)
+            if en1<=en0:
+                accept += 1
+            else:
+            # Now apply the Monte Carlo test - compare
+            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                boltz = exp( -(en1 - en0) / Ts )                     # np.exp is slow, use libc.math.exp instead for single numbers
 
-    return process_accept/(nmax*nmax)
+                if boltz >= dist(generator):                         # random.random or np.random.uniform is not allowed in nogil, use thread safe c++ 11 random instead
+                    accept += 1
+                else:
+                    arr[ix,iy] -= ang
+
+    # update even rows
+    for i in prange(nmax//2 + nmax%2, nogil=True):
+        for j in range(nmax):
+            ix = xran[i*2,j]
+            iy = yran[i*2,j]
+            ang = aran[i*2,j]
+            en0 = one_energy(arr,ix,iy,nmax)
+            arr[ix,iy] += ang
+            en1 = one_energy(arr,ix,iy,nmax)
+            if en1<=en0:
+                accept += 1
+            else:
+            # Now apply the Monte Carlo test - compare
+            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                boltz = exp( -(en1 - en0) / Ts )
+
+                if boltz >= dist(generator):
+                    accept += 1
+                else:
+                    arr[ix,iy] -= ang
+
+    return accept/(nmax*nmax)
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -292,79 +343,81 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
 
+    cdef:
+        double runtime, c_temp = 0.0
+        int it, c_nsteps, c_nmax, c_pflag = 0
+    
+    c_temp = float(temp)
+    c_nsteps = int(nsteps)
+    c_nmax = int(nmax)
+    c_pflag = int(pflag)
 
     # Create and initialise lattice
-    if rank == 0:
-        print(f"MPI has started with {size} tasks.")
-        lattice = initdat(nmax)
-    else:
-        lattice = None
-
-    lattice = comm.bcast(lattice, root=0)
+    cdef double[:,::1] lattice = initdat(c_nmax)
+    # Plot initial frame of lattice
+    plotdat(lattice,c_pflag,c_nmax)
+    # Create arrays to store energy, acceptance ratio and order parameter
+    cdef double[::1] energy = np.zeros(c_nsteps+1,dtype=np.float64)
+    cdef double[::1] ratio = np.zeros(c_nsteps+1,dtype=np.float64)
+    cdef double[::1] order = np.zeros(c_nsteps+1,dtype=np.float64)
+    # Set initial values in arrays
+    energy[0] = all_energy(lattice,c_nmax)
+    ratio[0] = 0.5 # ideal value
+    order[0] = get_order(lattice,c_nmax)
     
-    if rank == 0:
-        # Plot initial frame of lattice
-        plotdat(lattice,pflag,nmax)
-        # Create arrays to store energy, acceptance ratio and order parameter
-        energy = np.zeros(nsteps+1,dtype=np.dtype)
-        ratio = np.zeros(nsteps+1,dtype=np.dtype)
-        order = np.zeros(nsteps+1,dtype=np.dtype)
-        # Set initial values in arrays
-        energy[0] = all_energy(lattice,nmax,rank,size)
-        ratio[0] = 0.5 # ideal value
-        order[0] = get_order(lattice,nmax,rank,size)
-
-
     # Begin doing and timing some MC steps.
+    MC_initial = 0
+    MC_final = 0
+    all_initial = 0
+    all_final = 0
+    order_initial = 0
+    order_final = 0
+
+    MC_times = np.zeros(c_nsteps,dtype=np.float64)
+    all_times = np.zeros(c_nsteps,dtype=np.float64)
+    order_times = np.zeros(c_nsteps,dtype=np.float64)
+
     initial = time.time()
-    
-    for it in range(1,nsteps+1):
-        process_ratio = MC_step(lattice,temp,nmax,rank,size)
-        comm.reduce(process_ratio, op=MPI.SUM, root=0)
-        if rank == 0:
-            ratio[it] = process_ratio
-            
-        new_lattice = np.empty((nmax,nmax),dtype=np.float64)
-        # All reduce by the max, this is OK because the array element can only increase or stay the same betweeen each step
-        comm.Allreduce(lattice, new_lattice, op=MPI.MAX)
-        lattice = new_lattice
+    for it in range(1,c_nsteps+1):
+        MC_initial = time.time()
+        ratio[it] = MC_step(lattice,c_temp,c_nmax)
+        MC_final = time.time()
+        MC_times[it-1] = MC_final-MC_initial
 
-        process_energy = all_energy(lattice,nmax,rank,size)
-        comm.reduce(process_energy, op=MPI.SUM, root=0)
-        if rank == 0:
-            energy[it] = process_energy
+        all_initial = time.time()
+        energy[it] = all_energy(lattice,c_nmax)
+        all_final = time.time()
+        all_times[it-1] = all_final-all_initial
 
-        process_Qab = get_order(lattice,nmax,rank,size)
-        comm.reduce(process_Qab, op=MPI.SUM, root=0)
-        if rank == 0:
-            eigenvalues = np.linalg.eigvals(process_Qab)
-            order[it] = np.max(eigenvalues)
+        order_initial = time.time()
+        order[it] = get_order(lattice,c_nmax)
+        order_final = time.time()
+        order_times[it-1] = order_final-order_initial
 
     final = time.time()
     runtime = final-initial
     
     # Final outputs
-    if rank == 0:
-        print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
-        # Plot final frame of lattice and generate output file
-        # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
-        plotdat(lattice,pflag,nmax)
+    print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program,c_nmax,c_nsteps,c_temp,order[c_nsteps-1],runtime))
+    # Plot final frame of lattice and generate output file
+    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    plotdat(lattice,c_pflag,c_nmax)
+    print("MC time: ", MC_times.sum())
+    print("All time: ", all_times.sum())
+    print("Order time: ", order_times.sum())
 #=======================================================================
 # Main part of program, getting command line arguments and calling
 # main simulation function.
 #
-if __name__ == '__main__':
-    if int(len(sys.argv)) == 5:
-        PROGNAME = sys.argv[0]
-        ITERATIONS = int(sys.argv[1])
-        SIZE = int(sys.argv[2])
-        TEMPERATURE = float(sys.argv[3])
-        PLOTFLAG = int(sys.argv[4])
-        main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
-    else:
-        print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
+# if __name__ == '__main__':
+#     if int(len(sys.argv)) == 5:
+#         PROGNAME = sys.argv[0]
+#         ITERATIONS = int(sys.argv[1])
+#         SIZE = int(sys.argv[2])
+#         TEMPERATURE = float(sys.argv[3])
+#         PLOTFLAG = int(sys.argv[4])
+#         main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
+#     else:
+#         print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
 #=======================================================================

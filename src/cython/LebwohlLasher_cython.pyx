@@ -31,14 +31,12 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 cimport numpy as cnp
-cimport openmp
 cimport cython
 
-from libc.math cimport sin, cos, exp
-import math
+from libc.math cimport sin, cos, exp, log, sqrt, M_PI
+from libc.stdlib cimport rand, RAND_MAX
 
 import random
-
 
 #=======================================================================
 def initdat(int nmax):
@@ -52,7 +50,7 @@ def initdat(int nmax):
 	Returns:
 	  arr (float(nmax,nmax)) = array to hold lattice.
     """
-    cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
+    cdef double[:,::1] arr = np.random.random_sample((nmax,nmax))*2.0*np.pi
     return arr
 #=======================================================================
 def plotdat(arr,pflag,nmax):
@@ -74,6 +72,8 @@ def plotdat(arr,pflag,nmax):
 	Returns:
       NULL
     """
+    arr = np.array(arr)
+
     if pflag==0:
         return
     u = np.cos(arr)
@@ -140,7 +140,8 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
     FileOut.close()
 #=======================================================================
 @cython.boundscheck(False)
-cdef inline one_energy(double[:,::1] arr, int ix, int iy, int nmax):
+@cython.wraparound(False)
+cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -182,6 +183,7 @@ cdef inline one_energy(double[:,::1] arr, int ix, int iy, int nmax):
     return en
 #=======================================================================
 @cython.boundscheck(False)
+@cython.wraparound(False)
 cdef double all_energy(double[:, ::1] arr, int nmax):
     """
     Arguments:
@@ -204,7 +206,8 @@ cdef double all_energy(double[:, ::1] arr, int nmax):
 
 #=======================================================================
 @cython.boundscheck(False)
-cdef get_order(double[:,::1] arr, int nmax):
+@cython.wraparound(False)
+cdef double get_order(double[:,::1] arr, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -216,18 +219,14 @@ cdef get_order(double[:,::1] arr, int nmax):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] Qab = np.zeros((3, 3), dtype=np.float64)
-    cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] delta = np.eye(3, dtype=np.float64)
+    cdef double[:,::1] Qab = np.zeros((3, 3), dtype=np.float64)
+    cdef double[:,::1] delta = np.eye(3, dtype=np.float64)
+
     #
     # Generate a 3D unit vector for each cell (i,j) and
     # put it in a (3,i,j) array.
     #
-    cdef cnp.ndarray[cnp.float64_t, ndim=3, mode='c'] lab = np.empty((3, nmax, nmax), dtype=np.float64)
-    
-    # Fill the lab array with cos, sin, and zeros
-    lab[0, :, :] = np.cos(arr).reshape(nmax, nmax)
-    lab[1, :, :] = np.sin(arr).reshape(nmax, nmax)
-    lab[2, :, :] = np.zeros_like(arr).reshape(nmax, nmax)
+    cdef double[:,:,::1] lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
 
     cdef:
         int a,b,i,j = 0
@@ -237,17 +236,16 @@ cdef get_order(double[:,::1] arr, int nmax):
             for i in range(nmax):
                 for j in range(nmax):
                     Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
+            Qab[a,b] = Qab[a,b]/(2*nmax*nmax)
 
-    cdef:
-        cnp.ndarray[cnp.float64_t, ndim=1] eigenvalues = np.zeros(3, dtype=np.float64)
-        cnp.ndarray[cnp.float64_t, ndim=2] eigenvectors = np.zeros((3, 3), dtype=np.float64)
+    cdef double[::1] eigenvalues = np.zeros(3, dtype=np.float64)
 
-    # eigenvalues,eigenvectors = np.linalg.eig(Qab)
-    return eigenvalues.max()
+    eigenvalues = np.linalg.eigvalsh(Qab)                           # np.linalg.eigvalsh is faster than np.linalg.eigvals, and is also c array contiguous
+    return max(eigenvalues)
 #=======================================================================
 @cython.boundscheck(False)
-cdef MC_step(double[:,::1] arr, float Ts, int nmax):
+@cython.wraparound(False)
+cdef double MC_step(double[:,::1] arr, double Ts, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -322,16 +320,15 @@ def main(program, nsteps, nmax, temp, pflag):
     c_nsteps = int(nsteps)
     c_nmax = int(nmax)
     c_pflag = int(pflag)
-    c_temp = float(temp)
 
     # Create and initialise lattice
-    cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] lattice = initdat(c_nmax)
+    cdef double[:,::1] lattice = initdat(c_nmax)
     # Plot initial frame of lattice
     plotdat(lattice,c_pflag,c_nmax)
     # Create arrays to store energy, acceptance ratio and order parameter
-    cdef cnp.ndarray[cnp.float64_t, ndim=1, mode='c'] energy = np.zeros(c_nsteps+1,dtype=np.float64)
-    cdef cnp.ndarray[cnp.float64_t, ndim=1, mode='c'] ratio = np.zeros(c_nsteps+1,dtype=np.float64)
-    cdef cnp.ndarray[cnp.float64_t, ndim=1, mode='c'] order = np.zeros(c_nsteps+1,dtype=np.float64)
+    cdef double[::1] energy = np.zeros(c_nsteps+1,dtype=np.float64)
+    cdef double[::1] ratio = np.zeros(c_nsteps+1,dtype=np.float64)
+    cdef double[::1] order = np.zeros(c_nsteps+1,dtype=np.float64)
     # Set initial values in arrays
     energy[0] = all_energy(lattice,c_nmax)
     ratio[0] = 0.5 # ideal value

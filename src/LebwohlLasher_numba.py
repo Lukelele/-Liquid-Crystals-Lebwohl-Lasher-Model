@@ -130,7 +130,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-@njit
+@njit(["double(double[:,:], int64, int64, int64)"], cache=True)          # using cache=True removes just in time compilation for later runs, speeds up runtime from 3.1s to 2.4s
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
@@ -155,7 +155,7 @@ def one_energy(arr,ix,iy,nmax):
 # Add together the 4 neighbour contributions
 # to the energy
 #
-    ang = arr[ix,iy]-arr[ixp,iy]
+    ang = arr[ix,iy]-arr[ixp,iy]                # compute cos_ang to avoid calling cos twice
     cos_ang = cos(ang)
     en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ixm,iy]
@@ -169,7 +169,7 @@ def one_energy(arr,ix,iy,nmax):
     en += 0.5*(1.0 - 3.0*cos_ang**2)
     return en
 #=======================================================================
-@njit
+@njit(["double(double[:,:], int64)"], cache=True)
 def all_energy(arr,nmax):
     """
     Arguments:
@@ -187,7 +187,7 @@ def all_energy(arr,nmax):
             enall += one_energy(arr,i,j,nmax)
     return enall
 #=======================================================================
-@njit
+@njit(["double(double[:,:], int64)"], cache=True)
 def get_order(arr,nmax):
     """
     Arguments:
@@ -216,7 +216,7 @@ def get_order(arr,nmax):
     eigenvalues = np.linalg.eigvals(Qab)
     return eigenvalues.max()
 #=======================================================================
-@njit
+@njit(["double[:,:](double, int64)"], cache=True)
 def rand_normal(scale, nmax):
     """
     Arguments:
@@ -232,10 +232,10 @@ def rand_normal(scale, nmax):
     aran = np.zeros((nmax,nmax))
     for i in range(nmax):
         for j in range(nmax):
-            aran[i,j] = np.sqrt(-2*np.log(np.random.uniform(0.0,1.0)))*np.cos(2*np.pi*np.random.uniform(0.0,1.0))
+            aran[i,j] = np.sqrt(-2*np.log(np.random.uniform(0.0,1.0)))*np.cos(2*np.pi*np.random.uniform(0.0,1.0)) * scale
     return aran
 #=======================================================================
-@njit
+@njit(["double(double[:,:], double, int64)"], cache=True)
 def MC_step(arr,Ts,nmax):
     """
     Arguments:
@@ -280,9 +280,9 @@ def MC_step(arr,Ts,nmax):
             else:
             # Now apply the Monte Carlo test - compare
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
+                boltz = exp( -(en1 - en0) / Ts )
 
-                if boltz >= np.random.uniform(0.0,1.0):
+                if boltz >= np.random.uniform(0.0,1.0):                    # for some reason np.random.uniform is slightly faster here than np.random.random but in cython its much slower
                     accept += 1
                 else:
                     arr[ix,iy] -= ang
