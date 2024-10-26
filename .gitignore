@@ -1,3 +1,6 @@
 *.pdf
 __pycache__/
 lib/
+*.so
+*.o
+*.c
