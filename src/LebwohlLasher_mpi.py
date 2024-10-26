@@ -341,7 +341,7 @@ def main(program, nsteps, nmax, temp, pflag):
         process_Qab = get_order(lattice,nmax,rank,size)
         comm.reduce(process_Qab, op=MPI.SUM, root=0)
         if rank == 0:
-            eigenvalues = np.linalg.eigvals(process_Qab)
+            eigenvalues = np.linalg.eigvalsh(process_Qab)
             order[it] = np.max(eigenvalues)
 
     final = time.time()
