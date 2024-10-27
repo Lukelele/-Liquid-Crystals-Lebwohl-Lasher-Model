@@ -39,8 +39,30 @@ from libcpp.random cimport mt19937, uniform_real_distribution
 
 import random
 
-from cython.parallel import prange
+from cython.parallel import prange, parallel
 cimport openmp
+from openmp cimport omp_get_thread_num, omp_get_num_threads, omp_get_max_threads, omp_set_num_threads;
+
+
+def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runtime):
+    """
+    Arguments:
+      folderpath (string) = the path to the folder where the csv file will be saved;
+      filename (string) = the name of the csv file;
+      type (string) = the type of the simulation;
+      size (int) = the size of the lattice;
+      steps (int) = the number of Monte Carlo steps;
+      temp (float) = the reduced temperature;
+      order (float) = the order parameter;
+      runtime (float) = the runtime of the simulation.
+    Description:
+      Function to save the data to a csv file.
+    Returns:
+      NULL
+    """
+    
+    with open(folderpath + '/' + filename, 'a') as f:
+        f.write(f"{type},{size},{steps},{temp},{order},{nthreads},{runtime}\n")
 
 #=======================================================================
 cdef double[:,::1] initdat(int nmax):
@@ -344,6 +366,9 @@ def main(program, nsteps, nmax, temp, pflag):
       NULL
     """
 
+    omp_set_num_threads(4)
+    total_threads = omp_get_max_threads()
+
     cdef:
         double runtime, c_temp = 0.0
         int it, c_nsteps, c_nmax, c_pflag = 0
@@ -400,6 +425,7 @@ def main(program, nsteps, nmax, temp, pflag):
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program,c_nmax,c_nsteps,c_temp,order[c_nsteps-1],runtime))
+    log_csv("E:\Scientific Computing\-Liquid-Crystals-Lebwohl-Lasher-Model\log", "log.csv", "cython_omp", nmax, nsteps, temp, order[c_nsteps-1], total_threads, runtime)
     # Plot final frame of lattice and generate output file
     # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,c_pflag,c_nmax)
