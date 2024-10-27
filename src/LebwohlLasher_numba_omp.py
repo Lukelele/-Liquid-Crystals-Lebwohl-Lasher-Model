@@ -31,6 +31,27 @@ import matplotlib as mpl
 from numba import jit, njit, prange, get_num_threads
 import random
 
+
+def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runtime):
+    """
+    Arguments:
+      folderpath (string) = the path to the folder where the csv file will be saved;
+      filename (string) = the name of the csv file;
+      type (string) = the type of the simulation;
+      size (int) = the size of the lattice;
+      steps (int) = the number of Monte Carlo steps;
+      temp (float) = the reduced temperature;
+      order (float) = the order parameter;
+      runtime (float) = the runtime of the simulation.
+    Description:
+      Function to save the data to a csv file.
+    Returns:
+      NULL
+    """
+    
+    with open(folderpath + '/' + filename, 'a') as f:
+        f.write(f"{type},{size},{steps},{temp},{order},{nthreads},{runtime}\n")
+
 #=======================================================================
 def initdat(nmax):
     """
@@ -343,6 +364,7 @@ def main(program, nsteps, nmax, temp, pflag):
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
+    log_csv("../log", "log.csv", "numba_omp", nmax, nsteps, temp, order[nsteps-1], get_num_threads(), runtime)
     # Plot final frame of lattice and generate output file
     # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)

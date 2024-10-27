@@ -31,6 +31,28 @@ import matplotlib as mpl
 
 from mpi4py import MPI
 
+
+def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runtime):
+    """
+    Arguments:
+      folderpath (string) = the path to the folder where the csv file will be saved;
+      filename (string) = the name of the csv file;
+      type (string) = the type of the simulation;
+      size (int) = the size of the lattice;
+      steps (int) = the number of Monte Carlo steps;
+      temp (float) = the reduced temperature;
+      order (float) = the order parameter;
+      runtime (float) = the runtime of the simulation.
+    Description:
+      Function to save the data to a csv file.
+    Returns:
+      NULL
+    """
+    
+    with open(folderpath + '/' + filename, 'a') as f:
+        f.write(f"{type},{size},{steps},{temp},{order},{nthreads},{runtime}\n")
+
+
 #=======================================================================
 def initdat(nmax):
     """
@@ -323,25 +345,28 @@ def main(program, nsteps, nmax, temp, pflag):
     initial = time.time()
     
     for it in range(1,nsteps+1):
-        process_ratio = MC_step(lattice,temp,nmax,rank,size)
-        comm.reduce(process_ratio, op=MPI.SUM, root=0)
+        process_ratio = np.array(MC_step(lattice,temp,nmax,rank,size))
+        total_ratio = np.zeros(1)
+        comm.Reduce(process_ratio, total_ratio, op=MPI.SUM, root=0)                 #comm.Reduce is faster than comm.reduce, capital Reduce uses C function, whilst lower case reduce uses python objects
         if rank == 0:
-            ratio[it] = process_ratio
+            ratio[it] = total_ratio[0]
             
         new_lattice = np.empty((nmax,nmax),dtype=np.float64)
         # All reduce by the max, this is OK because the array element can only increase or stay the same betweeen each step
         comm.Allreduce(lattice, new_lattice, op=MPI.MAX)
         lattice = new_lattice
 
-        process_energy = all_energy(lattice,nmax,rank,size)
-        comm.reduce(process_energy, op=MPI.SUM, root=0)
+        process_energy = np.array(all_energy(lattice,nmax,rank,size))
+        total_energy = np.zeros(1)
+        comm.Reduce(process_energy, total_energy, op=MPI.SUM, root=0)
         if rank == 0:
-            energy[it] = process_energy
+            energy[it] = total_energy[0]
 
         process_Qab = get_order(lattice,nmax,rank,size)
-        comm.reduce(process_Qab, op=MPI.SUM, root=0)
+        total_Qab = np.zeros((3,3))
+        comm.Reduce(process_Qab, total_Qab, op=MPI.SUM, root=0)
         if rank == 0:
-            eigenvalues = np.linalg.eigvalsh(process_Qab)
+            eigenvalues = np.linalg.eigvalsh(total_Qab)
             order[it] = np.max(eigenvalues)
 
     final = time.time()
@@ -350,6 +375,7 @@ def main(program, nsteps, nmax, temp, pflag):
     # Final outputs
     if rank == 0:
         print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
+        log_csv("../log", "log.csv", "mpi", nmax, nsteps, temp, order[nsteps-1], size, runtime)
         # Plot final frame of lattice and generate output file
         # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
         plotdat(lattice,pflag,nmax)

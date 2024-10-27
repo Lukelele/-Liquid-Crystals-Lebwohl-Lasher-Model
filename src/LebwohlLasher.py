@@ -47,7 +47,7 @@ def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runt
       NULL
     """
     
-    with open(folderpath + '\\' + filename, 'a') as f:
+    with open(folderpath + '/' + filename, 'a') as f:
         f.write(f"{type},{size},{steps},{temp},{order},{nthreads},{runtime}\n")
 
 
@@ -313,7 +313,7 @@ def main(program, nsteps, nmax, temp, pflag):
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
-    log_csv("E:\Scientific Computing\-Liquid-Crystals-Lebwohl-Lasher-Model\log", "log.csv", "python", nmax, nsteps, temp, order[nsteps-1], 1, runtime)
+    log_csv("../log", "log.csv", "python", nmax, nsteps, temp, order[nsteps-1], 1, runtime)
     # Plot final frame of lattice and generate output file
     # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)

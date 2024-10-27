@@ -9,6 +9,27 @@ from math import cos, sin, pi, exp, sqrt, ceil
 from numba.cuda.random import create_xoroshiro128p_states, xoroshiro128p_normal_float64, xoroshiro128p_uniform_float64
 
 
+def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runtime):
+    """
+    Arguments:
+      folderpath (string) = the path to the folder where the csv file will be saved;
+      filename (string) = the name of the csv file;
+      type (string) = the type of the simulation;
+      size (int) = the size of the lattice;
+      steps (int) = the number of Monte Carlo steps;
+      temp (float) = the reduced temperature;
+      order (float) = the order parameter;
+      runtime (float) = the runtime of the simulation.
+    Description:
+      Function to save the data to a csv file.
+    Returns:
+      NULL
+    """
+    
+    with open(folderpath + '/' + filename, 'a') as f:
+        f.write(f"{type},{size},{steps},{temp},{order},{nthreads},{runtime}\n")
+
+
 def to_device(arr):
     return cuda.to_device(arr)
 
@@ -407,6 +428,7 @@ def main(program, nsteps, nmax, temp, pflag):
     runtime = final - initial
 
     print(f"{program}: Size: {nmax}, Steps: {nsteps}, T*: {temp:.3f}: Order: {order[nsteps - 1]:.3f}, Time: {runtime:.6f} s")
+    log_csv("../log", "log.csv", "cuda", nmax, nsteps, temp, order[nsteps-1], num_states, runtime)
     lattice = from_device(d_lattice)
     plotdat(lattice, pflag, nmax)
 
