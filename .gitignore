@@ -4,3 +4,6 @@ lib/
 *.so
 *.o
 *.c
+build/
+*.pyd
+*.pyc

@@ -43,7 +43,7 @@ from cython.parallel import prange
 cimport openmp
 
 #=======================================================================
-def initdat(int nmax):
+cdef double[:,::1] initdat(int nmax):
     """
     Arguments:
       nmax (int) = size of lattice to create (nmax,nmax).

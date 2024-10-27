@@ -36,10 +36,12 @@ cimport cython
 from libc.math cimport sin, cos, exp, log, sqrt, M_PI
 from libc.stdlib cimport rand, RAND_MAX
 
+from libcpp.random cimport mt19937, uniform_real_distribution
+
 import random
 
 #=======================================================================
-def initdat(int nmax):
+cdef double[:,::1] initdat(int nmax):
     """
     Arguments:
       nmax (int) = size of lattice to create (nmax,nmax).
@@ -272,6 +274,10 @@ cdef double MC_step(double[:,::1] arr, double Ts, int nmax):
     cdef long[:,::1] yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     cdef double[:,::1] aran = np.random.normal(scale=scale, size=(nmax,nmax))
 
+    #libcpp random generator
+    cdef uniform_real_distribution[double] dist = uniform_real_distribution[double](0.0, 1.0)
+    cdef mt19937 generator = mt19937()
+
     cdef:
         int i,j,ix,iy = 0
         double ang,en0,en1,boltz = 0.0
@@ -291,7 +297,7 @@ cdef double MC_step(double[:,::1] arr, double Ts, int nmax):
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
                 boltz = exp( -(en1 - en0) / Ts )                     # np.exp is slow, use libc.math.exp instead for single numbers
 
-                if boltz >= random.random():                         # np.random.uniform(0.0,1.0) is SOOOOO incredibly slow its actually pretty impressive
+                if boltz >= dist(generator):                         # np.random.uniform(0.0,1.0) is SOOOOO incredibly slow its actually pretty impressive, random.random() is ok but libcpp is best, and also thread safe
                     accept += 1
                 else:
                     arr[ix,iy] -= ang

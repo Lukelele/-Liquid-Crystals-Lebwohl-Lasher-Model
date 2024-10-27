@@ -316,7 +316,7 @@ def main(program, nsteps, nmax, temp, pflag):
         # Set initial values in arrays
         energy[0] = all_energy(lattice,nmax,rank,size)
         ratio[0] = 0.5 # ideal value
-        order[0] = get_order(lattice,nmax,rank,size)
+        order[0] = np.max(np.linalg.eigvalsh(get_order(lattice,nmax,rank,size)))
 
 
     # Begin doing and timing some MC steps.
