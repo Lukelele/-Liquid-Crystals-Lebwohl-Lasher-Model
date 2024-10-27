@@ -377,10 +377,13 @@ def main(program, nsteps, nmax, temp, pflag):
         order[0] = max(np.linalg.eigvalsh(get_order(lattice,c_nmax,rank,size)))
     
     cdef:
-        double process_ratio = 0.0
-        double process_energy = 0.0
+        double[::1] process_ratio = np.zeros(1,dtype=np.float64)
+        double[::1] process_energy = np.zeros(1,dtype=np.float64)
         cnp.ndarray[cnp.float64_t, ndim=2] process_Qab
         cnp.ndarray[cnp.float64_t, ndim=2] new_lattice
+        double[::1] total_ratio = np.zeros(1,dtype=np.float64)
+        double[::1] total_energy = np.zeros(1,dtype=np.float64)
+        cnp.ndarray[cnp.float64_t, ndim=2] total_Qab = np.zeros((3,3),dtype=np.float64)
         double[::1] eigenvalues
         double initial, final, runtime = 0.0
 
@@ -401,10 +404,10 @@ def main(program, nsteps, nmax, temp, pflag):
     for it in range(1,c_nsteps+1):
         MC_initial = time.time()
 
-        process_ratio = MC_step(lattice,c_temp,c_nmax,rank,size)
-        comm.reduce(process_ratio, op=MPI.SUM, root=0)
+        process_ratio[0] = MC_step(lattice,c_temp,c_nmax,rank,size)
+        comm.Reduce(process_ratio, total_ratio, op=MPI.SUM, root=0)
         if rank == 0:
-            ratio[it] = process_ratio
+            ratio[it] = total_ratio[0]
         new_lattice = np.empty((c_nmax,c_nmax),dtype=np.float64)
         # All reduce by the max, this is OK because the array element can only increase or stay the same betweeen each step
         comm.Allreduce(lattice, new_lattice, op=MPI.MAX)
@@ -415,10 +418,10 @@ def main(program, nsteps, nmax, temp, pflag):
 
         all_initial = time.time()
 
-        process_energy = all_energy(lattice,c_nmax,rank,size)
-        comm.reduce(process_energy, op=MPI.SUM, root=0)
+        process_energy[0] = all_energy(lattice,c_nmax,rank,size)
+        comm.Reduce(process_energy, total_energy, op=MPI.SUM, root=0)
         if rank == 0:
-            energy[it] = process_energy
+            energy[it] = process_energy[0]
 
         all_final = time.time()
         all_times[it-1] = all_final - all_initial
@@ -426,9 +429,9 @@ def main(program, nsteps, nmax, temp, pflag):
         order_initial = time.time()
 
         process_Qab = get_order(lattice,c_nmax,rank,size)
-        comm.reduce(process_Qab, op=MPI.SUM, root=0)
+        comm.Reduce(process_Qab, total_Qab, op=MPI.SUM, root=0)
         if rank == 0:
-            eigenvalues = np.linalg.eigvalsh(process_Qab)
+            eigenvalues = np.linalg.eigvalsh(total_Qab)
             order[it] = max(eigenvalues)
 
         order_final = time.time()
