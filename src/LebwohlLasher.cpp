@@ -4,9 +4,37 @@
 #include <vector>
 #include <random>
 #include <algorithm>
+#include <fstream>
 
 using namespace std;
 
+
+
+void log_csv(
+    const string folderpath,
+    const string filename,
+    const string type,
+    int size,
+    int steps,
+    double temp,
+    double order,
+    int nthreads,
+    double runtime
+) {
+    std::ofstream file;
+    string filepath = folderpath + '/' + filename;
+    file.open(filepath, std::ios_base::app);
+    
+    file << type << "," 
+         << size << "," 
+         << steps << "," 
+         << temp << "," 
+         << order << "," 
+         << nthreads << "," 
+         << runtime << "\n";
+         
+    file.close();
+}
 
 
 class EigenSolver {
@@ -184,7 +212,7 @@ double MC_step(vector<vector<double> > &arr, double Ts, int nmax) {
             else {
                 double boltz = exp( -(en1 - en0) / Ts );
 
-                if (boltz >= (double)rand() / RAND_MAX) {
+                if (boltz >= (double)rand() / (double)RAND_MAX) {
                     accept += 1;
                 }
                 else {
@@ -241,7 +269,7 @@ double get_order(vector<vector<double> > &arr, int nmax) {
 
     for (int a = 0; a < 3; ++a) {
         for (int b = 0; b < 3; ++b) {
-            Qab[a][b] = Qab[a][b] / (nmax * nmax);
+            Qab[a][b] = (double)(Qab[a][b] / ((double)nmax * (double)nmax));
         }
     }
 
@@ -249,20 +277,18 @@ double get_order(vector<vector<double> > &arr, int nmax) {
     eigenSolver.compute();
     std::vector<double> eigenvalues = eigenSolver.getEigenvalues();
     
-    int maxEigenvalue = *max_element(eigenvalues.begin(), eigenvalues.end());
+    double maxEigenvalue = *max_element(eigenvalues.begin(), eigenvalues.end());
 
     return maxEigenvalue;
 }
 
 
 
-int main() {
-    cout << "Lebwohl-Lasher Model" << endl;
-
-    int nsteps = 50;
-    int nmax = 400;
-    float temp = 0.5;
-    int pflag = 0;
+int main(int argc, char *argv[]) {
+    int nsteps = atoi(argv[1]);
+    int nmax = atoi(argv[2]);
+    float temp = atoi(argv[3]);
+    int pflag = atoi(argv[4]);
 
     vector<vector<double> > lattice = initdat(nmax);
 
@@ -287,7 +313,7 @@ int main() {
     double runtime = (double)(final - initial) / CLOCKS_PER_SEC;
 
     cout << "Size: " << nmax << ", Steps: " << nsteps << ", T*: " << temp << ", Order: " << order[nsteps-1] << ", Time: " << runtime << " s" << endl;
-    cin.get();
+    log_csv("../log", "log.csv", "cpp", nmax, nsteps, temp, order[nsteps-1], 1, runtime);
 
     return 0;
 }

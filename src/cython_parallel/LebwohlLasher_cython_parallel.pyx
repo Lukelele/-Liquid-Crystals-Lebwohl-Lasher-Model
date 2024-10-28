@@ -425,7 +425,7 @@ def main(program, nsteps, nmax, temp, pflag):
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program,c_nmax,c_nsteps,c_temp,order[c_nsteps-1],runtime))
-    log_csv("E:\Scientific Computing\-Liquid-Crystals-Lebwohl-Lasher-Model\log", "log.csv", "cython_omp", nmax, nsteps, temp, order[c_nsteps-1], total_threads, runtime)
+    log_csv("../../log", "log.csv", "cython_omp", nmax, nsteps, temp, order[c_nsteps-1], total_threads, runtime)
     # Plot final frame of lattice and generate output file
     # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,c_pflag,c_nmax)

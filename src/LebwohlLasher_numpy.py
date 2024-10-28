@@ -29,6 +29,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+from math import cos, sin, exp, pi, sqrt
+
 
 def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runtime):
     """
@@ -174,13 +176,17 @@ def one_energy(arr,ix,iy,nmax):
 # to the energy
 #
     ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = np.cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = np.cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = np.cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = np.cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     return en
 #=======================================================================
 def all_energy(arr,nmax):
@@ -269,7 +275,7 @@ def MC_step(arr,Ts,nmax):
             else:
             # Now apply the Monte Carlo test - compare
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
+                boltz = exp( -(en1 - en0) / Ts )
 
                 if boltz >= np.random.uniform(0.0,1.0):
                     accept += 1
