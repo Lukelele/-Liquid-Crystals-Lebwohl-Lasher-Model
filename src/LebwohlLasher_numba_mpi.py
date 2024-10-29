@@ -155,7 +155,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-@njit(["double(double[:,:], int64, int64, int64)"], cache=True)          # using cache=True removes just in time compilation for later runs, speeds up runtime from 3.1s to 2.4s
+@njit(["double(double[:,:], int64, int64, int64)"], cache=True)          # using cache=True removes just in time compilation for later runs
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
@@ -369,7 +369,7 @@ def main(program, nsteps, nmax, temp, pflag):
         # Set initial values in arrays
         energy[0] = all_energy(lattice,nmax,rank,size)
         ratio[0] = 0.5 # ideal value
-        order[0] = get_order(lattice,nmax,rank,size)
+        order[0] = np.max(np.linalg.eigvalsh(get_order(lattice,nmax,rank,size)))
 
 
     # Begin doing and timing some MC steps.
@@ -414,7 +414,7 @@ def main(program, nsteps, nmax, temp, pflag):
         print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
         log_csv("../log", "log.csv", "numba_mpi", nmax, nsteps, temp, order[nsteps-1], size, runtime)
         # Plot final frame of lattice and generate output file
-        # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+        savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
         plotdat(lattice,pflag,nmax)
 #=======================================================================
 # Main part of program, getting command line arguments and calling

@@ -188,6 +188,21 @@ def one_energy(arr,ix,iy,nmax):
     cos_ang = np.cos(ang)
     en += 0.5*(1.0 - 3.0*cos_ang**2)
     return en
+
+def one_energy_vectorized(arr, ix, iy, nmax):
+    """
+    Vectorized computation of energy for multiple cells.
+    """
+    ixp = (ix + 1) % nmax
+    ixm = (ix - 1) % nmax
+    iyp = (iy + 1) % nmax
+    iym = (iy - 1) % nmax
+    
+    en = (0.5 * (1.0 - 3.0 * np.cos(arr[ix, iy] - arr[ixp, iy])**2 +
+                1.0 - 3.0 * np.cos(arr[ix, iy] - arr[ixm, iy])**2 +
+                1.0 - 3.0 * np.cos(arr[ix, iy] - arr[ix, iyp])**2 +
+                1.0 - 3.0 * np.cos(arr[ix, iy] - arr[ix, iym])**2))
+    return en
 #=======================================================================
 def all_energy(arr,nmax):
     """
@@ -200,11 +215,26 @@ def all_energy(arr,nmax):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    enall = 0.0
-
-    for i in range(nmax):
-        enall += np.sum(one_energy(arr, i, np.arange(nmax), nmax))
-    return enall
+    right = np.roll(arr, -1, axis=0)
+    left = np.roll(arr, 1, axis=0)
+    up = np.roll(arr, -1, axis=1)
+    down = np.roll(arr, 1, axis=1)
+    
+    # Calculate angle differences
+    diff_right = arr - right
+    diff_left = arr - left
+    diff_up = arr - up
+    diff_down = arr - down
+    
+    # Compute energy contributions
+    en = 0.5 * (1.0 - 3.0 * np.cos(diff_right)**2
+               + 1.0 - 3.0 * np.cos(diff_left)**2
+               + 1.0 - 3.0 * np.cos(diff_up)**2
+               + 1.0 - 3.0 * np.cos(diff_down)**2)
+    
+    # Sum all energy contributions
+    total_energy = np.sum(en)
+    return total_energy
 #=======================================================================
 def get_order(arr,nmax):
     """
@@ -257,31 +287,47 @@ def MC_step(arr,Ts,nmax):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
-    scale=0.1+Ts
+    scale = 0.1 + Ts
     accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    aran = np.random.normal(scale=scale, size=(nmax,nmax))
-    for i in range(nmax):
-        for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
-                accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = exp( -(en1 - en0) / Ts )
+    
+    # Generate random indices and angle changes
+    xran = np.random.randint(0, high=nmax, size=(nmax, nmax))
+    yran = np.random.randint(0, high=nmax, size=(nmax, nmax))
+    aran = np.random.normal(scale=scale, size=(nmax, nmax))
 
-                if boltz >= np.random.uniform(0.0,1.0):
-                    accept += 1
-                else:
-                    arr[ix,iy] -= ang
-    return accept/(nmax*nmax)
+    en0 = one_energy_vectorized(arr, xran, yran, nmax)
+
+    arr_new = arr.copy()
+    arr_new[xran, yran] += aran
+    
+    en1 = one_energy_vectorized(arr_new, xran, yran, nmax)
+    
+    accept_mask = ((en1 - en0) <= 0) | (np.exp(-(en1 - en0) / Ts) >= np.random.uniform(0.0, 1.0, size=(en1 - en0).shape))
+    accept += np.sum(accept_mask)
+
+    arr[xran[accept_mask], yran[accept_mask]] += aran[accept_mask]
+
+    # for i in range(nmax):
+    #     for j in range(nmax):
+    #         ix = xran[i,j]
+    #         iy = yran[i,j]
+    #         ang = aran[i,j]
+    #         en0 = one_energy(arr,ix,iy,nmax)
+    #         arr[ix,iy] += ang
+    #         en1 = one_energy(arr,ix,iy,nmax)
+    #         if en1<=en0:
+    #             accept += 1
+    #         else:
+    #         # Now apply the Monte Carlo test - compare
+    #         # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+    #             boltz = np.exp( -(en1 - en0) / Ts )
+
+    #             if boltz >= np.random.uniform(0.0,1.0):
+    #                 accept += 1
+    #             else:
+    #                 arr[ix,iy] -= ang
+    
+    return accept / (nmax * nmax)
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -296,6 +342,7 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
+    np.random.seed(42)
     # Create and initialise lattice
     lattice = initdat(nmax)
     # Plot initial frame of lattice
@@ -322,7 +369,7 @@ def main(program, nsteps, nmax, temp, pflag):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     log_csv("../log", "log.csv", "numpy", nmax, nsteps, temp, order[nsteps-1], 1, runtime)
     # Plot final frame of lattice and generate output file
-    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
 #=======================================================================
 # # Main part of program, getting command line arguments and calling

@@ -38,6 +38,8 @@ from libc.stdlib cimport rand, RAND_MAX
 
 from libcpp.random cimport mt19937, uniform_real_distribution
 
+import math
+
 
 def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runtime):
     """
@@ -179,8 +181,9 @@ cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax):
 	  en (float) = reduced energy of cell.
     """
     cdef:
-        double en, ang, cos_ang = 0.0
-        double cell_value = arr[ix,iy]
+        double en = 0.0
+        double ang = 0.0
+        double cos_ang = 0.0
         int ixp = (ix+1)%nmax # These are the coordinates
         int ixm = (ix-1)%nmax # of the neighbours
         int iyp = (iy+1)%nmax # with wraparound
@@ -189,18 +192,18 @@ cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax):
 # Add together the 4 neighbour contributions
 # to the energy
 #
-    ang = cell_value-arr[ixp,iy]
+    ang = arr[ix,iy]-arr[ixp,iy]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ixm,iy]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ixm,iy]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ix,iyp]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ix,iyp]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ix,iym]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ix,iym]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
 
     return en
 #=======================================================================
@@ -218,7 +221,7 @@ cdef double all_energy(double[:, ::1] arr, int nmax):
       enall (float) = reduced energy of lattice.
     """
     cdef double enall = 0.0
-    cdef int i, j
+    cdef int i, j = 0
 
     for i in range(nmax):
         for j in range(nmax):
@@ -251,7 +254,10 @@ cdef double get_order(double[:,::1] arr, int nmax):
     cdef double[:,:,::1] lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
 
     cdef:
-        int a,b,i,j = 0
+        int a = 0
+        int b = 0
+        int i = 0
+        int j = 0
 
     for a in range(3):
         for b in range(3):
@@ -396,7 +402,7 @@ def main(program, nsteps, nmax, temp, pflag):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program,c_nmax,c_nsteps,c_temp,order[c_nsteps-1],runtime))
     log_csv("../../log", "log.csv", "cython", nmax, nsteps, temp, order[c_nsteps-1], 1, runtime)
     # Plot final frame of lattice and generate output file
-    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    savedat(lattice,c_nsteps,c_temp,runtime,ratio,energy,order,c_nmax)
     plotdat(lattice,c_pflag,c_nmax)
     print("MC time: ", MC_times.sum())
     print("All time: ", all_times.sum())

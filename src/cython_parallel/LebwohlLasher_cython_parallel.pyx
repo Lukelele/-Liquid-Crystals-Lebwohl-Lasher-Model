@@ -183,7 +183,9 @@ cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax) nogil
 	  en (float) = reduced energy of cell.
     """
     cdef:
-        double en, ang, cos_ang = 0.0
+        double en = 0.0
+        double ang = 0.0
+        double cos_ang = 0.0
         double cell_value = arr[ix,iy]
         int ixp = (ix+1)%nmax # These are the coordinates
         int ixm = (ix-1)%nmax # of the neighbours
@@ -427,7 +429,7 @@ def main(program, nsteps, nmax, temp, pflag):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program,c_nmax,c_nsteps,c_temp,order[c_nsteps-1],runtime))
     log_csv("../../log", "log.csv", "cython_omp", nmax, nsteps, temp, order[c_nsteps-1], total_threads, runtime)
     # Plot final frame of lattice and generate output file
-    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    savedat(lattice,c_nsteps,c_temp,runtime,ratio,energy,order,c_nmax)
     plotdat(lattice,c_pflag,c_nmax)
     print("MC time: ", MC_times.sum())
     print("All time: ", all_times.sum())

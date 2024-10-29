@@ -29,7 +29,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from numba import jit, njit, prange, get_num_threads
-import random
 
 
 def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runtime):
@@ -282,12 +281,16 @@ def MC_step(arr,Ts,nmax):
     # defined rand_normal function above
     aran = rand_normal(scale, nmax)
 
+    odd_rows = np.arange(1,nmax,2)
+    even_rows = np.arange(0,nmax,2)
+
     # Update odd rows
-    for i in prange(nmax//2):
-            for j in range(nmax):
-                ix = xran[i*2+1,j]
-                iy = yran[i*2+1,j]
-                ang = aran[i*2+1,j]
+    for i in prange(nmax):
+        for j in range(nmax):
+            ix = xran[i,j]
+            iy = yran[i,j]
+            if iy in odd_rows:
+                ang = aran[i,j]
                 en0 = one_energy(arr,ix,iy,nmax)
                 arr[ix,iy] += ang
                 en1 = one_energy(arr,ix,iy,nmax)
@@ -297,18 +300,19 @@ def MC_step(arr,Ts,nmax):
                 # Now apply the Monte Carlo test - compare
                 # exp( -(E_new - E_old) / T* ) >= rand(0,1)
                     boltz = np.exp( -(en1 - en0) / Ts )
-
                     if boltz >= np.random.uniform(0.0,1.0):
                         accept += 1
                     else:
                         arr[ix,iy] -= ang
 
-    # Update even rows
-    for i in prange(nmax//2 + nmax%2):
-            for j in range(nmax):
-                ix = xran[i*2,j]
-                iy = yran[i*2,j]
-                ang = aran[i*2,j]
+
+    # Update odd rows
+    for i in prange(nmax):
+        for j in range(nmax):
+            ix = xran[i,j]
+            iy = yran[i,j]
+            if iy in even_rows:
+                ang = aran[i,j]
                 en0 = one_energy(arr,ix,iy,nmax)
                 arr[ix,iy] += ang
                 en1 = one_energy(arr,ix,iy,nmax)
@@ -318,7 +322,6 @@ def MC_step(arr,Ts,nmax):
                 # Now apply the Monte Carlo test - compare
                 # exp( -(E_new - E_old) / T* ) >= rand(0,1)
                     boltz = np.exp( -(en1 - en0) / Ts )
-
                     if boltz >= np.random.uniform(0.0,1.0):
                         accept += 1
                     else:
@@ -366,7 +369,7 @@ def main(program, nsteps, nmax, temp, pflag):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
     log_csv("../log", "log.csv", "numba_omp", nmax, nsteps, temp, order[nsteps-1], get_num_threads(), runtime)
     # Plot final frame of lattice and generate output file
-    # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+    savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
 #=======================================================================
 # Main part of program, getting command line arguments and calling
