@@ -186,7 +186,6 @@ cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax) nogil
         double en = 0.0
         double ang = 0.0
         double cos_ang = 0.0
-        double cell_value = arr[ix,iy]
         int ixp = (ix+1)%nmax # These are the coordinates
         int ixm = (ix-1)%nmax # of the neighbours
         int iyp = (iy+1)%nmax # with wraparound
@@ -195,18 +194,18 @@ cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax) nogil
 # Add together the 4 neighbour contributions
 # to the energy
 #
-    ang = cell_value-arr[ixp,iy]
+    ang = arr[ix,iy]-arr[ixp,iy]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ixm,iy]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ixm,iy]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ix,iyp]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ix,iyp]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ix,iym]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ix,iym]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
 
     return en
 #=======================================================================
@@ -296,12 +295,16 @@ cdef double MC_step(double[:,::1] arr, double Ts, int nmax):
     # with temperature.
     cdef double scale = 0.1+Ts
     cdef double accept = 0
+    cdef double local_accept = 0
     cdef long[:,::1] xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     cdef long[:,::1] yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
     cdef double[:,::1] aran = np.random.normal(scale=scale, size=(nmax,nmax))
 
     cdef uniform_real_distribution[double] dist = uniform_real_distribution[double](0.0, 1.0)
-    cdef mt19937 generator = mt19937()
+    cdef mt19937 generator = mt19937(omp_get_thread_num())
+
+    cdef openmp.omp_lock_t lock
+    openmp.omp_init_lock(&lock)
 
     cdef:
         int i,j,ix,iy = 0
@@ -310,47 +313,32 @@ cdef double MC_step(double[:,::1] arr, double Ts, int nmax):
         int[::1] even_row_indices = np.arange(0, nmax, 2)
 
 
-    # update odd rows
-    for i in prange(nmax//2, nogil=True):
+    for i in prange(nmax, nogil=True):
+        local_accept = 0
         for j in range(nmax):
-            ix = xran[i*2+1,j]
-            iy = yran[i*2+1,j]
-            ang = aran[i*2+1,j]
+            ix = xran[i,j]
+            iy = yran[i,j]
+            ang = aran[i,j]
             en0 = one_energy(arr,ix,iy,nmax)
+
+            openmp.omp_set_lock(&lock)                      # critical section to avoid race condition
             arr[ix,iy] += ang
+            openmp.omp_unset_lock(&lock)
+
             en1 = one_energy(arr,ix,iy,nmax)
             if en1<=en0:
-                accept += 1
+                local_accept += 1
             else:
             # Now apply the Monte Carlo test - compare
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
                 boltz = exp( -(en1 - en0) / Ts )                     # np.exp is slow, use libc.math.exp instead for single numbers
-
                 if boltz >= dist(generator):                         # random.random or np.random.uniform is not allowed in nogil, use thread safe c++ 11 random instead
-                    accept += 1
+                    local_accept += 1
                 else:
+                    openmp.omp_set_lock(&lock)
                     arr[ix,iy] -= ang
-
-    # update even rows
-    for i in prange(nmax//2 + nmax%2, nogil=True):
-        for j in range(nmax):
-            ix = xran[i*2,j]
-            iy = yran[i*2,j]
-            ang = aran[i*2,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
-                accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = exp( -(en1 - en0) / Ts )
-
-                if boltz >= dist(generator):
-                    accept += 1
-                else:
-                    arr[ix,iy] -= ang
+                    openmp.omp_unset_lock(&lock)
+        accept += local_accept
 
     return accept/(nmax*nmax)
 #=======================================================================

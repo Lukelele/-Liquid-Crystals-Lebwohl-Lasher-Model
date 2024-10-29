@@ -165,7 +165,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
 #=======================================================================
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline double one_energy(double[:,::1] &arr, int ix, int iy, int nmax):
+cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -184,7 +184,6 @@ cdef inline double one_energy(double[:,::1] &arr, int ix, int iy, int nmax):
         double en = 0.0
         double ang = 0.0
         double cos_ang = 0.0
-        double cell_value = arr[ix,iy]
         int ixp = (ix+1)%nmax # These are the coordinates
         int ixm = (ix-1)%nmax # of the neighbours
         int iyp = (iy+1)%nmax # with wraparound
@@ -193,18 +192,18 @@ cdef inline double one_energy(double[:,::1] &arr, int ix, int iy, int nmax):
 # Add together the 4 neighbour contributions
 # to the energy
 #
-    ang = cell_value-arr[ixp,iy]
+    ang = arr[ix,iy]-arr[ixp,iy]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ixm,iy]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ixm,iy]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ix,iyp]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ix,iyp]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
-    ang = cell_value-arr[ix,iym]
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    ang = arr[ix,iy]-arr[ix,iym]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
 
     return en
 #=======================================================================

@@ -28,7 +28,8 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from numba import jit, njit, prange, get_num_threads
+
+from math import cos, sin, exp, pi, sqrt
 
 
 def log_csv(folderpath, filename, type, size, steps, temp, order, nthreads, runtime):
@@ -150,7 +151,6 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
         print("   {:05d}    {:6.4f} {:12.4f}  {:6.4f} ".format(i,ratio[i],energy[i],order[i]),file=FileOut)
     FileOut.close()
 #=======================================================================
-@njit(["double(double[:,:], int64, int64, int64)"], cache=True)          # using cache=True removes just in time compilation for later runs, speeds up runtime from 3.1s to 2.4s
 def one_energy(arr,ix,iy,nmax):
     """
     Arguments:
@@ -176,16 +176,34 @@ def one_energy(arr,ix,iy,nmax):
 # to the energy
 #
     ang = arr[ix,iy]-arr[ixp,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = np.cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ixm,iy]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = np.cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ix,iyp]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = np.cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ix,iym]
-    en += 0.5*(1.0 - 3.0*np.cos(ang)**2)
+    cos_ang = np.cos(ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    return en
+
+def one_energy_vectorized(arr, ix, iy, nmax):
+    """
+    Vectorized computation of energy for multiple cells.
+    """
+    ixp = (ix + 1) % nmax
+    ixm = (ix - 1) % nmax
+    iyp = (iy + 1) % nmax
+    iym = (iy - 1) % nmax
+    
+    en = (0.5 * (1.0 - 3.0 * np.cos(arr[ix, iy] - arr[ixp, iy])**2 +
+                1.0 - 3.0 * np.cos(arr[ix, iy] - arr[ixm, iy])**2 +
+                1.0 - 3.0 * np.cos(arr[ix, iy] - arr[ix, iyp])**2 +
+                1.0 - 3.0 * np.cos(arr[ix, iy] - arr[ix, iym])**2))
     return en
 #=======================================================================
-@njit(["double(double[:,:], int64)"], parallel=True, cache=True)
 def all_energy(arr,nmax):
     """
     Arguments:
@@ -197,13 +215,27 @@ def all_energy(arr,nmax):
 	Returns:
 	  enall (float) = reduced energy of lattice.
     """
-    enall = 0.0
-    for i in prange(nmax):
-        for j in range(nmax):
-            enall += one_energy(arr,i,j,nmax)
-    return enall
+    right = np.roll(arr, -1, axis=0)
+    left = np.roll(arr, 1, axis=0)
+    up = np.roll(arr, -1, axis=1)
+    down = np.roll(arr, 1, axis=1)
+    
+    # Calculate angle differences
+    diff_right = arr - right
+    diff_left = arr - left
+    diff_up = arr - up
+    diff_down = arr - down
+    
+    # Compute energy contributions
+    en = 0.5 * (1.0 - 3.0 * np.cos(diff_right)**2
+               + 1.0 - 3.0 * np.cos(diff_left)**2
+               + 1.0 - 3.0 * np.cos(diff_up)**2
+               + 1.0 - 3.0 * np.cos(diff_down)**2)
+    
+    # Sum all energy contributions
+    total_energy = np.sum(en)
+    return total_energy
 #=======================================================================
-@njit(["double(double[:,:], int64)"], parallel=True, cache=True)
 def get_order(arr,nmax):
     """
     Arguments:
@@ -216,42 +248,24 @@ def get_order(arr,nmax):
 	Returns:
 	  max(eigenvalues(Qab)) (float) = order parameter for lattice.
     """
-    Qab = np.zeros((3,3))
-    delta = np.eye(3,3)
-    #
-    # Generate a 3D unit vector for each cell (i,j) and
-    # put it in a (3,i,j) array.
-    #
-    lab = np.vstack((np.cos(arr),np.sin(arr),np.zeros_like(arr))).reshape(3,nmax,nmax)
-    for a in range(3):
-        for b in range(3):
-            for i in range(nmax):
-                for j in range(nmax):
-                    Qab[a,b] += 3*lab[a,i,j]*lab[b,i,j] - delta[a,b]
-    Qab = Qab/(2*nmax*nmax)
-    eigenvalues = np.linalg.eigvals(Qab)
+    delta = np.eye(3)
+    
+    # Create lab matrix using broadcasting
+    cos_arr = np.cos(arr)
+    sin_arr = np.sin(arr)
+    lab = np.array([cos_arr, sin_arr, np.zeros_like(arr)]).reshape(3, nmax, nmax)
+    
+    # Calculate Qab using vectorized operations
+    Qab = 3 * np.einsum('aij,bij->ab', lab, lab) - delta * nmax * nmax
+    
+    # Normalize Qab
+    Qab /= (2 * nmax * nmax)
+    
+    # Compute eigenvalues and return the maximum
+    eigenvalues = np.linalg.eigvalsh(Qab)
+    
     return eigenvalues.max()
 #=======================================================================
-@njit(["double[:,:](double, int64)"], parallel=True, cache=True)
-def rand_normal(scale, nmax):
-    """
-    Arguments:
-      scale (float) = scale factor for normal distribution;
-      nmax (int) = side length of square lattice.
-    Description:
-      Function to generate a 2D array of normally distributed
-      random numbers. This is to replace the numpy.random.normal which
-      is not supported by number njit.
-  Returns:
-    aran (float(nmax,nmax)) = array of random numbers.
-    """
-    aran = np.zeros((nmax,nmax))
-    for i in range(nmax):
-        for j in range(nmax):
-            aran[i,j] = np.sqrt(-2*np.log(np.random.uniform(0.0,1.0)))*np.cos(2*np.pi*np.random.uniform(0.0,1.0)) * scale
-    return aran
-#=======================================================================
-@njit(["double(double[:,:], double, int64)"], parallel=True, cache=True)
 def MC_step(arr,Ts,nmax):
     """
     Arguments:
@@ -273,61 +287,35 @@ def MC_step(arr,Ts,nmax):
     # using lots of individual calls.  "scale" sets the width
     # of the distribution for the angle changes - increases
     # with temperature.
-    scale=0.1+Ts
+    scale = 0.1 + Ts
     accept = 0
-    xran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    yran = np.random.randint(0,high=nmax, size=(nmax,nmax))
-    # aran = np.random.normal(scale=scale, size=(nmax,nmax))      np.random.normal does not work with njit
-    # defined rand_normal function above
-    aran = rand_normal(scale, nmax)
+    
+    
+    xran = np.random.randint(0, high=nmax, size=(nmax, nmax))
+    yran = np.random.randint(0, high=nmax, size=(nmax, nmax))
+    aran = np.random.normal(scale=scale, size=(nmax, nmax))
 
-    odd_rows = np.arange(1,nmax,2)
-    even_rows = np.arange(0,nmax,2)
-
-    # Update odd rows
-    for i in prange(nmax):
+    for i in range(nmax):
         for j in range(nmax):
             ix = xran[i,j]
             iy = yran[i,j]
-            if iy in odd_rows:
-                ang = aran[i,j]
-                en0 = one_energy(arr,ix,iy,nmax)
-                arr[ix,iy] += ang
-                en1 = one_energy(arr,ix,iy,nmax)
-                if en1<=en0:
+            ang = aran[i,j]
+            en0 = one_energy(arr,ix,iy,nmax)
+            arr[ix,iy] += ang
+            en1 = one_energy(arr,ix,iy,nmax)
+            if en1<=en0:
+                accept += 1
+            else:
+            # Now apply the Monte Carlo test - compare
+            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                boltz = np.exp( -(en1 - en0) / Ts )
+
+                if boltz >= np.random.uniform(0.0,1.0):
                     accept += 1
                 else:
-                # Now apply the Monte Carlo test - compare
-                # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                    boltz = np.exp( -(en1 - en0) / Ts )
-                    if boltz >= np.random.uniform(0.0,1.0):
-                        accept += 1
-                    else:
-                        arr[ix,iy] -= ang
-
-
-    # Update odd rows
-    for i in prange(nmax):
-        for j in range(nmax):
-            ix = xran[i,j]
-            iy = yran[i,j]
-            if iy in even_rows:
-                ang = aran[i,j]
-                en0 = one_energy(arr,ix,iy,nmax)
-                arr[ix,iy] += ang
-                en1 = one_energy(arr,ix,iy,nmax)
-                if en1<=en0:
-                    accept += 1
-                else:
-                # Now apply the Monte Carlo test - compare
-                # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                    boltz = np.exp( -(en1 - en0) / Ts )
-                    if boltz >= np.random.uniform(0.0,1.0):
-                        accept += 1
-                    else:
-                        arr[ix,iy] -= ang
-
-    return accept/(nmax*nmax)
+                    arr[ix,iy] -= ang
+    
+    return accept / (nmax * nmax)
 #=======================================================================
 def main(program, nsteps, nmax, temp, pflag):
     """
@@ -342,7 +330,7 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
-    print(f"Numba started with: {get_num_threads()} threads.")
+    np.random.seed(42)
     # Create and initialise lattice
     lattice = initdat(nmax)
     # Plot initial frame of lattice
@@ -367,14 +355,14 @@ def main(program, nsteps, nmax, temp, pflag):
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
-    log_csv("../log", "log.csv", "numba_omp", nmax, nsteps, temp, order[nsteps-1], get_num_threads(), runtime)
+    log_csv("../log", "log.csv", "numpy", nmax, nsteps, temp, order[nsteps-1], 1, runtime)
     # Plot final frame of lattice and generate output file
     savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)
 #=======================================================================
-# Main part of program, getting command line arguments and calling
-# main simulation function.
-#
+# # Main part of program, getting command line arguments and calling
+# # main simulation function.
+# #
 if __name__ == '__main__':
     if int(len(sys.argv)) == 5:
         PROGNAME = sys.argv[0]
@@ -385,4 +373,4 @@ if __name__ == '__main__':
         main(PROGNAME, ITERATIONS, SIZE, TEMPERATURE, PLOTFLAG)
     else:
         print("Usage: python {} <ITERATIONS> <SIZE> <TEMPERATURE> <PLOTFLAG>".format(sys.argv[0]))
-#=======================================================================
+# #=======================================================================
