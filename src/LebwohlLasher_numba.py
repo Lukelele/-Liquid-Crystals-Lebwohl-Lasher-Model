@@ -295,7 +295,6 @@ def MC_step(arr,Ts,nmax):
             en0 = one_energy(arr,ix,iy,nmax)
             arr[ix,iy] += ang
             en1 = one_energy(arr,ix,iy,nmax)
-            en1=1
             if en1<=en0:
                 accept += 1
             else:
@@ -303,7 +302,7 @@ def MC_step(arr,Ts,nmax):
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
                 boltz = exp( -(en1 - en0) / Ts )
 
-                if boltz >= np.random.uniform(0.0,1.0):                    # for some reason np.random.uniform is slightly faster here than np.random.random but in cython its much slower
+                if boltz >= np.random.uniform(0.0,1.0):                    # np.random.uniform is slightly faster here than np.random.random but in cython its much slower
                     accept += 1
                 else:
                     arr[ix,iy] -= ang
@@ -322,6 +321,8 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
+    np.random.seed(42)
+
     # Create and initialise lattice
     lattice = initdat(nmax)
     # Plot initial frame of lattice

@@ -252,11 +252,11 @@ def MC_step_kernel(arr, Ts, accept, nmax, scale, xran, yran, aran, states):
     # checkerboard update to avoid race conditions, this loop updates the "0" cells
     i, j = cuda.grid(2)
     if i < nmax and j < nmax:
-        if (i % 2 + j % 2) % 2 == 0:
-            idx = i * arr.shape[1] + j
-            ix = xran[i, j]
-            iy = yran[i, j]
-            ang = aran[i, j]
+        idx = i * arr.shape[1] + j
+        ix = xran[i, j]
+        iy = yran[i, j]
+        ang = aran[i, j]
+        if (ix % 2 + iy % 2) % 2 == 0:
 
             # one_energy function
             en0 = 0.0
@@ -314,12 +314,11 @@ def MC_step_kernel(arr, Ts, accept, nmax, scale, xran, yran, aran, states):
     # checkerboard update to avoid race conditions, this loop updates the "1" cells
     i, j = cuda.grid(2)
     if i < nmax and j < nmax:
-        if (i % 2 + j % 2) % 2 == 1:
-            idx = i * arr.shape[1] + j
-            ix = xran[i, j]
-            iy = yran[i, j]
-            ang = aran[i, j]
-
+        idx = i * arr.shape[1] + j
+        ix = xran[i, j]
+        iy = yran[i, j]
+        ang = aran[i, j]   
+        if (ix % 2 + iy % 2) % 2 == 1:
             # one_energy function
             en0 = 0.0
             ixp = (ix+1)%nmax # These are the coordinates

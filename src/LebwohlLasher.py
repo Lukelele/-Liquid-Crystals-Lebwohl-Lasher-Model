@@ -289,6 +289,8 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
+    np.random.seed(42)
+
     # Create and initialise lattice
     lattice = initdat(nmax)
     # Plot initial frame of lattice

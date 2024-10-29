@@ -232,26 +232,27 @@ def get_order(arr,nmax,rank,size):
 #=======================================================================
 def update_rows(arr,Ts,nmax,row_indices,xran,yran,aran):
     process_accept = 0
-    for i in row_indices:
+    for i in range(nmax):
         for j in range(nmax):
             ix = xran[i,j]
             iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
-                process_accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
-
-                if boltz >= np.random.uniform(0.0,1.0):
+            if iy in row_indices:
+                ang = aran[i,j]
+                en0 = one_energy(arr,ix,iy,nmax)
+                arr[ix,iy] += ang
+                en1 = one_energy(arr,ix,iy,nmax)
+                if en1<=en0:
                     process_accept += 1
                 else:
-                    arr[ix,iy] -= ang
-                    pass
+                # Now apply the Monte Carlo test - compare
+                # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                    boltz = np.exp( -(en1 - en0) / Ts )
+
+                    if boltz >= np.random.uniform(0.0,1.0):
+                        process_accept += 1
+                    else:
+                        arr[ix,iy] -= ang
+                        pass
     return process_accept
 
 def MC_step(arr,Ts,nmax,rank,size):
@@ -345,16 +346,21 @@ def main(program, nsteps, nmax, temp, pflag):
     initial = time.time()
     
     for it in range(1,nsteps+1):
+        old_lattice = np.copy(lattice)
+
         process_ratio = np.array(MC_step(lattice,temp,nmax,rank,size))
         total_ratio = np.zeros(1)
         comm.Reduce(process_ratio, total_ratio, op=MPI.SUM, root=0)                 #comm.Reduce is faster than comm.reduce, capital Reduce uses C function, whilst lower case reduce uses python objects
         if rank == 0:
             ratio[it] = total_ratio[0]
-            
-        new_lattice = np.empty((nmax,nmax),dtype=np.float64)
-        # All reduce by the max, this is OK because the array element can only increase or stay the same betweeen each step
-        comm.Allreduce(lattice, new_lattice, op=MPI.MAX)
-        lattice = new_lattice
+            # update lattice
+            for i in range(1, size):
+                process_lattice = comm.recv(source=i, tag=1)
+                lattice[old_lattice != process_lattice] = process_lattice[old_lattice != process_lattice]
+        else:
+            comm.send(lattice, dest=0, tag=1)
+
+        lattice = comm.bcast(lattice, root=0)
 
         process_energy = np.array(all_energy(lattice,nmax,rank,size))
         total_energy = np.zeros(1)
