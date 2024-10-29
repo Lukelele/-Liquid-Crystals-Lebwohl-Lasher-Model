@@ -264,34 +264,34 @@ cdef cnp.ndarray[cnp.float64_t, ndim=2] get_order(double[:,::1] &arr, int nmax, 
 
     return process_Qab
 #=======================================================================
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef update_rows(double[:,::1] &arr, double Ts, int nmax, cnp.ndarray[cnp.int32_t, ndim=1] row_indices, long[:,::1]xran, long[:,::1] yran, double[:,::1] aran, uniform_real_distribution[double] dist, mt19937 generator):
+cdef int update_rows(double[:,::1] arr, double Ts, int nmax, int[::1] row_indices, long[:,::1] xran, long[:,::1] yran, double[:,::1] aran, uniform_real_distribution[double] dist, mt19937 generator):
     cdef int process_accept = 0
     cdef int i,j,ix,iy = 0
     cdef double ang,en0,en1,boltz = 0.0
 
-    for i in row_indices:
+    for i in range(nmax):
         for j in range(nmax):
             ix = xran[i,j]
             iy = yran[i,j]
-            ang = aran[i,j]
-            en0 = one_energy(arr,ix,iy,nmax)
-            arr[ix,iy] += ang
-            en1 = one_energy(arr,ix,iy,nmax)
-            if en1<=en0:
-                process_accept += 1
-            else:
-            # Now apply the Monte Carlo test - compare
-            # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = exp( -(en1 - en0) / Ts )
-
-                if boltz >= dist(generator):                    # libcpp random generator is so much faster and thread safe
+            if iy in row_indices:
+                ang = aran[i,j]
+                en0 = one_energy(arr,ix,iy,nmax)
+                arr[ix,iy] += ang
+                en1 = one_energy(arr,ix,iy,nmax)
+                if en1<=en0:
                     process_accept += 1
                 else:
-                    arr[ix,iy] -= ang
-                    pass
-    return process_accept/(nmax*nmax)
+                # Now apply the Monte Carlo test - compare
+                # exp( -(E_new - E_old) / T* ) >= rand(0,1)
+                    boltz = exp( -(en1 - en0) / Ts )
+
+                    if boltz >= dist(generator):
+                        process_accept += 1
+                    else:
+                        arr[ix,iy] -= ang
+                        pass
+    return process_accept
+
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
@@ -376,6 +376,7 @@ def main(program, nsteps, nmax, temp, pflag):
     cdef int c_pflag = int(pflag)
 
     cdef cnp.ndarray[cnp.float64_t, ndim=2] lattice
+    cdef cnp.ndarray[cnp.float64_t, ndim=2] old_lattice
     # Create and initialise lattice
     if rank == 0:
         print(f"MPI has started with {size} tasks.")
@@ -424,16 +425,22 @@ def main(program, nsteps, nmax, temp, pflag):
 
     initial = time.time()
     for it in range(1,c_nsteps+1):
+        old_lattice = lattice.copy()
+
         MC_initial = time.time()
 
         process_ratio[0] = MC_step(lattice,c_temp,c_nmax,rank,size)
         comm.Reduce(process_ratio, total_ratio, op=MPI.SUM, root=0)
         if rank == 0:
             ratio[it] = total_ratio[0]
-        new_lattice = np.empty((c_nmax,c_nmax),dtype=np.float64)
-        # All reduce by the max, this is OK because the array element can only increase or stay the same betweeen each step
-        comm.Allreduce(lattice, new_lattice, op=MPI.MAX)
-        lattice = new_lattice
+            # update lattice
+            for i in range(1, size):
+                process_lattice = comm.recv(source=i, tag=1)
+                lattice[old_lattice != process_lattice] = process_lattice[old_lattice != process_lattice]
+        else:
+            comm.send(lattice, dest=0, tag=1)
+
+        lattice = comm.bcast(lattice, root=0)
 
         MC_final = time.time()
         MC_times[it-1] = MC_final - MC_initial
