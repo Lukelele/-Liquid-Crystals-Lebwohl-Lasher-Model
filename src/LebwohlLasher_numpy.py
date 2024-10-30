@@ -290,47 +290,51 @@ def MC_step(arr,Ts,nmax):
     scale = 0.1 + Ts
     accept = 0
     
-    # Create checkerboard masks for black and white squares
+    # Create a checkerboard pattern
     indices = np.indices((nmax, nmax))
-    black_mask = (indices[0] + indices[1]) % 2 == 0  # Even sites
-    white_mask = ~black_mask  # Odd sites
     
-    # First half-step: Update black squares
-    xran_black = np.random.randint(0, high=nmax, size=(nmax, nmax)) * black_mask
-    yran_black = np.random.randint(0, high=nmax, size=(nmax, nmax)) * black_mask
-    aran_black = np.random.normal(scale=scale, size=(nmax, nmax)) * black_mask
+    # Generate random numbers only for checkerboard mask
+    xran = np.random.randint(0, high=nmax, size=(nmax, nmax))
+    yran = np.random.randint(0, high=nmax, size=(nmax, nmax))
+    aran = np.random.normal(scale=scale, size=(nmax, nmax))
 
-    en0_black = one_energy_vectorized(arr, xran_black[black_mask], yran_black[black_mask], nmax)
+    # first update
+    white_mask = (indices[0] + indices[1]) % 2 == 0  # Even indexed sites
 
-    arr_new = arr.copy()
-    arr_new[xran_black[black_mask], yran_black[black_mask]] += aran_black[black_mask]
-    
-    en1_black = one_energy_vectorized(arr_new, xran_black[black_mask], yran_black[black_mask], nmax)
-    
-    accept_mask_black = ((en1_black - en0_black) <= 0) | (np.exp(-(en1_black - en0_black) / Ts) >= np.random.uniform(0.0, 1.0, size=en1_black.shape))
-    accept += np.sum(accept_mask_black)
+    xran_white = xran * white_mask
+    yran_white = yran * white_mask
+    aran_white = aran * white_mask
 
-    arr[xran_black[black_mask][accept_mask_black], yran_black[black_mask][accept_mask_black]] += aran_black[black_mask][accept_mask_black]
-
-    # Second half-step: Update white squares
-    xran_white = np.random.randint(0, high=nmax, size=(nmax, nmax)) * white_mask
-    yran_white = np.random.randint(0, high=nmax, size=(nmax, nmax)) * white_mask
-    aran_white = np.random.normal(scale=scale, size=(nmax, nmax)) * white_mask
-
-    en0_white = one_energy_vectorized(arr, xran_white[white_mask], yran_white[white_mask], nmax)
+    en0 = one_energy_vectorized(arr, xran[white_mask], yran[white_mask], nmax)
 
     arr_new = arr.copy()
     arr_new[xran_white[white_mask], yran_white[white_mask]] += aran_white[white_mask]
     
-    en1_white = one_energy_vectorized(arr_new, xran_white[white_mask], yran_white[white_mask], nmax)
+    en1 = one_energy_vectorized(arr_new, xran_white[white_mask], yran_white[white_mask], nmax)
     
-    accept_mask_white = ((en1_white - en0_white) <= 0) | (np.exp(-(en1_white - en0_white) / Ts) >= np.random.uniform(0.0, 1.0, size=en1_white.shape))
-    accept += np.sum(accept_mask_white)
+    accept_white_mask = ((en1 - en0) <= 0) | (np.exp(-(en1 - en0) / Ts) >= np.random.uniform(0.0, 1.0, size=en1.shape))
+    accept += np.sum(accept_white_mask)
 
-    arr[xran_white[white_mask][accept_mask_white], yran_white[white_mask][accept_mask_white]] += aran_white[white_mask][accept_mask_white]
+    arr[xran_white[white_mask][accept_white_mask], yran_white[white_mask][accept_white_mask]] += aran_white[white_mask][accept_white_mask]
+
+
+    # second update
+    black_mask = ~white_mask
+    xran_black = xran * black_mask
+    yran_black = yran * black_mask
+    aran_black = aran * black_mask
+
+    en0 = one_energy_vectorized(arr, xran_black[black_mask], yran_black[black_mask], nmax)
+
+    arr_new = arr.copy()
+    arr_new[xran_black[black_mask], yran_black[black_mask]] += aran_black[black_mask]
     
-    return accept/(nmax**2)
+    en1 = one_energy_vectorized(arr_new, xran_black[black_mask], yran_black[black_mask], nmax)
+    
+    accept_black_mask = ((en1 - en0) <= 0) | (np.exp(-(en1 - en0) / Ts) >= np.random.uniform(0.0, 1.0, size=en1.shape))
+    accept += np.sum(accept_black_mask)
 
+    arr[xran_black[black_mask][accept_black_mask], yran_black[black_mask][accept_black_mask]] += aran_black[black_mask][accept_black_mask]
 
     # for i in range(nmax):
     #     for j in range(nmax):

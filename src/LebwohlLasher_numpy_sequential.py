@@ -29,6 +29,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+import random
+
 from math import cos, sin, exp, pi, sqrt
 
 
@@ -176,16 +178,16 @@ def one_energy(arr,ix,iy,nmax):
 # to the energy
 #
     ang = arr[ix,iy]-arr[ixp,iy]
-    cos_ang = np.cos(ang)
+    cos_ang = cos(ang)
     en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ixm,iy]
-    cos_ang = np.cos(ang)
+    cos_ang = cos(ang)
     en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ix,iyp]
-    cos_ang = np.cos(ang)
+    cos_ang = cos(ang)
     en += 0.5*(1.0 - 3.0*cos_ang**2)
     ang = arr[ix,iy]-arr[ix,iym]
-    cos_ang = np.cos(ang)
+    cos_ang = cos(ang)
     en += 0.5*(1.0 - 3.0*cos_ang**2)
     return en
 
@@ -308,9 +310,9 @@ def MC_step(arr,Ts,nmax):
             else:
             # Now apply the Monte Carlo test - compare
             # exp( -(E_new - E_old) / T* ) >= rand(0,1)
-                boltz = np.exp( -(en1 - en0) / Ts )
+                boltz = exp( -(en1 - en0) / Ts )
 
-                if boltz >= np.random.uniform(0.0,1.0):
+                if boltz >= random.random():
                     accept += 1
                 else:
                     arr[ix,iy] -= ang
@@ -330,7 +332,6 @@ def main(program, nsteps, nmax, temp, pflag):
     Returns:
       NULL
     """
-    np.random.seed(42)
     # Create and initialise lattice
     lattice = initdat(nmax)
     # Plot initial frame of lattice
@@ -355,7 +356,7 @@ def main(program, nsteps, nmax, temp, pflag):
     
     # Final outputs
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
-    log_csv("../log", "log.csv", "numpy", nmax, nsteps, temp, order[nsteps-1], 1, runtime)
+    log_csv("../log", "log.csv", "numpy_sequential", nmax, nsteps, temp, order[nsteps-1], 1, runtime)
     # Plot final frame of lattice and generate output file
     savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
     plotdat(lattice,pflag,nmax)

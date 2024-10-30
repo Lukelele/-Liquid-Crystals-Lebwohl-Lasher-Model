@@ -342,7 +342,7 @@ cdef double MC_step(double[:,::1] arr, double Ts, int nmax):
 
     return accept/(nmax*nmax)
 #=======================================================================
-def main(program, nsteps, nmax, temp, pflag):
+def main(program, nsteps, nmax, temp, pflag, nthreads=16):
     """
     Arguments:
 	  program (string) = the name of the program;
@@ -356,7 +356,8 @@ def main(program, nsteps, nmax, temp, pflag):
       NULL
     """
 
-    omp_set_num_threads(4)
+    cdef int c_nthreads = int(nthreads)
+    omp_set_num_threads(c_nthreads)
     total_threads = omp_get_max_threads()
 
     cdef:
@@ -417,7 +418,7 @@ def main(program, nsteps, nmax, temp, pflag):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program,c_nmax,c_nsteps,c_temp,order[c_nsteps-1],runtime))
     log_csv("../../log", "log.csv", "cython_omp", nmax, nsteps, temp, order[c_nsteps-1], total_threads, runtime)
     # Plot final frame of lattice and generate output file
-    savedat(lattice,c_nsteps,c_temp,runtime,ratio,energy,order,c_nmax)
+    # savedat(lattice,c_nsteps,c_temp,runtime,ratio,energy,order,c_nmax)
     plotdat(lattice,c_pflag,c_nmax)
     print("MC time: ", MC_times.sum())
     print("All time: ", all_times.sum())

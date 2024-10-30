@@ -383,7 +383,7 @@ def main(program, nsteps, nmax, temp, pflag):
         print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program, nmax,nsteps,temp,order[nsteps-1],runtime))
         log_csv("../log", "log.csv", "mpi", nmax, nsteps, temp, order[nsteps-1], size, runtime)
         # Plot final frame of lattice and generate output file
-        savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
+        # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
         plotdat(lattice,pflag,nmax)
 #=======================================================================
 # Main part of program, getting command line arguments and calling

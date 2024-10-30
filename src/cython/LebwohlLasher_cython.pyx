@@ -402,7 +402,7 @@ def main(program, nsteps, nmax, temp, pflag):
     print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program,c_nmax,c_nsteps,c_temp,order[c_nsteps-1],runtime))
     log_csv("../../log", "log.csv", "cython", nmax, nsteps, temp, order[c_nsteps-1], 1, runtime)
     # Plot final frame of lattice and generate output file
-    savedat(lattice,c_nsteps,c_temp,runtime,ratio,energy,order,c_nmax)
+    # savedat(lattice,c_nsteps,c_temp,runtime,ratio,energy,order,c_nmax)
     plotdat(lattice,c_pflag,c_nmax)
     print("MC time: ", MC_times.sum())
     print("All time: ", all_times.sum())

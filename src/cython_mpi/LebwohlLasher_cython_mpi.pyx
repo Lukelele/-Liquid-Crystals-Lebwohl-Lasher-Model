@@ -165,7 +165,7 @@ def savedat(arr,nsteps,Ts,runtime,ratio,energy,order,nmax):
 #=======================================================================
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax):
+cdef inline double one_energy(double[:,::1] &arr, int ix, int iy, int nmax):
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -182,8 +182,9 @@ cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax):
     """
     cdef:
         double en = 0.0
-        double ang = 0.0
+        double angle = 0.0
         double cos_ang = 0.0
+        double cell_value = arr[ix,iy]
         int ixp = (ix+1)%nmax # These are the coordinates
         int ixm = (ix-1)%nmax # of the neighbours
         int iyp = (iy+1)%nmax # with wraparound
@@ -192,18 +193,18 @@ cdef inline double one_energy(double[:,::1] arr, int ix, int iy, int nmax):
 # Add together the 4 neighbour contributions
 # to the energy
 #
-    ang = arr[ix,iy]-arr[ixp,iy]
+    ang = cell_value-arr[ixp,iy]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
-    ang = arr[ix,iy]-arr[ixm,iy]
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    ang = cell_value-arr[ixm,iy]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
-    ang = arr[ix,iy]-arr[ix,iyp]
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    ang = cell_value-arr[ix,iyp]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
-    ang = arr[ix,iy]-arr[ix,iym]
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
+    ang = cell_value-arr[ix,iym]
     cos_ang = cos(ang)
-    en += 0.5*(1.0 - 3.0*cos_ang*cos_ang)
+    en += 0.5*(1.0 - 3.0*cos_ang**2)
 
     return en
 #=======================================================================
@@ -265,7 +266,7 @@ cdef cnp.ndarray[cnp.float64_t, ndim=2] get_order(double[:,::1] &arr, int nmax, 
 
     return process_Qab
 #=======================================================================
-cdef int update_rows(double[:,::1] arr, double Ts, int nmax, int[::1] row_indices, long[:,::1] xran, long[:,::1] yran, double[:,::1] aran, uniform_real_distribution[double] dist, mt19937 generator):
+cdef int update_rows(double[:,::1] arr, double Ts, int nmax, int[::1] row_indices, long[:,::1] xran, long[:,::1] yran, double[:,::1] aran, uniform_real_distribution[double] dist, mt19937 generator) nogil:
     cdef int process_accept = 0
     cdef int i,j,ix,iy = 0
     cdef double ang,en0,en1,boltz = 0.0
@@ -296,7 +297,7 @@ cdef int update_rows(double[:,::1] arr, double Ts, int nmax, int[::1] row_indice
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef double MC_step(double[:,::1] &arr, double Ts, int nmax, int rank, int size):
+cdef double MC_step(double[:,::1] &arr, double Ts, int nmax, int rank, int size) nogil:
     """
     Arguments:
 	  arr (float(nmax,nmax)) = array that contains lattice data;
@@ -324,7 +325,7 @@ cdef double MC_step(double[:,::1] &arr, double Ts, int nmax, int rank, int size)
 
     #libcpp random generator
     cdef uniform_real_distribution[double] dist = uniform_real_distribution[double](0.0, 1.0)
-    cdef mt19937 generator = mt19937()
+    cdef mt19937 generator = mt19937(rank)
 
     # calculate the even and odd rows indices
     cdef cnp.ndarray[cnp.int32_t, ndim=1] odd_rows_indices = np.arange(1,nmax,2)
@@ -451,7 +452,7 @@ def main(program, nsteps, nmax, temp, pflag):
         process_energy[0] = all_energy(lattice,c_nmax,rank,size)
         comm.Reduce(process_energy, total_energy, op=MPI.SUM, root=0)
         if rank == 0:
-            energy[it] = total_energy[0]
+            energy[it] = process_energy[0]
 
         all_final = time.time()
         all_times[it-1] = all_final - all_initial
@@ -474,7 +475,7 @@ def main(program, nsteps, nmax, temp, pflag):
         print("{}: Size: {:d}, Steps: {:d}, T*: {:5.3f}: Order: {:5.3f}, Time: {:8.6f} s".format(program,c_nmax,c_nsteps,c_temp,order[c_nsteps-1],runtime))
         log_csv("../../log", "log.csv", "cython_mpi", nmax, nsteps, temp, order[c_nsteps-1], size, runtime)
         # Plot final frame of lattice and generate output file
-        savedat(lattice,c_nsteps,c_temp,runtime,ratio,energy,order,c_nmax)
+        # savedat(lattice,nsteps,temp,runtime,ratio,energy,order,nmax)
         plotdat(lattice,c_pflag,c_nmax)
         print("MC time: ", MC_times.sum())
         print("All time: ", all_times.sum())

@@ -430,7 +430,7 @@ def main(program, nsteps, nmax, temp, pflag):
     log_csv("../log", "log.csv", "cuda", nmax, nsteps, temp, order[nsteps-1], num_states, runtime)
     lattice = from_device(d_lattice)
     plotdat(lattice, pflag, nmax)
-    savedat(lattice, nsteps, temp, runtime, ratio, energy, order, nmax)
+    # savedat(lattice, nsteps, temp, runtime, ratio, energy, order, nmax)
 
 
 if __name__ == '__main__':
